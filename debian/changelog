@@ -1,3 +1,11 @@
+grub2 (1.98+20100804-14skerlet1) unstable; urgency=low
+
+  * Delete booting messages.
+    - "GRUB loading.", "Welcome to GRUB!" and "Booting a command list".
+  * Change "Debian" to "Skerlet" in debian/default/grub.
+
+ -- Skerlet Project Team <skerlet@swc.toshiba.co.jp>  Tue, 31 Jan 2012 14:49:12 +0900
+
 grub2 (1.98+20100804-14) unstable; urgency=low
 
   [ Updated translations ]

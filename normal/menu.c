@@ -217,7 +217,9 @@ grub_menu_execute_with_fallback (grub_menu_t menu,
 {
   int fallback_entry;
 
+/*
   callback->notify_booting (entry, callback_data);
+*/
 
   grub_menu_execute_entry (entry);
 
@@ -542,9 +544,11 @@ static void
 notify_booting (grub_menu_entry_t entry,
 		void *userdata __attribute__((unused)))
 {
+/*
   grub_printf ("  ");
   grub_printf_ (N_("Booting \'%s\'"), entry->title);
   grub_printf ("\n\n");
+*/
 }
 
 /* Callback invoked when a default menu entry executed because of a timeout
