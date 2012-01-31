@@ -176,7 +176,7 @@ grub_main (void)
   /* Hello.  */
   grub_setcolorstate (GRUB_TERM_COLOR_HIGHLIGHT);
 /*  grub_printf ("Welcome to GRUB!\n\n"); */
-  grub_printf ("");
+  grub_printf ("\n");
   grub_setcolorstate (GRUB_TERM_COLOR_STANDARD);
 
   /* Load pre-loaded modules and free the space.  */
