@@ -1,9 +1,11 @@
 # If you change this file, run 'update-grub' afterwards to update
 # /boot/grub/grub.cfg.
+# For full documentation of the options in this file, see:
+#   info -f grub -n 'Simple configuration'
 
 GRUB_DEFAULT=0
 GRUB_TIMEOUT=5
-GRUB_DISTRIBUTOR=`lsb_release -i -s 2> /dev/null || echo Skerlet`
+GRUB_DISTRIBUTOR=`lsb_release -i -s 2> /dev/null || echo Debian`
 GRUB_CMDLINE_LINUX_DEFAULT="quiet"
 GRUB_CMDLINE_LINUX=""
 
@@ -24,7 +26,7 @@ GRUB_CMDLINE_LINUX=""
 #GRUB_DISABLE_LINUX_UUID=true
 
 # Uncomment to disable generation of recovery mode menu entries
-#GRUB_DISABLE_LINUX_RECOVERY="true"
+#GRUB_DISABLE_RECOVERY="true"
 
 # Uncomment to get a beep at grub start
 #GRUB_INIT_TUNE="480 440 1"
