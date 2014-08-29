@@ -22,6 +22,8 @@
 #include <grub/gui.h>
 #include <grub/font.h>
 #include <grub/gui_string_util.h>
+#include <grub/i18n.h>
+#include <grub/color.h>
 
 static const char *align_options[] =
 {
@@ -48,7 +50,7 @@ struct grub_gui_label
   char *text;
   char *template;
   grub_font_t font;
-  grub_gui_color_t color;
+  grub_video_rgba_color_t color;
   int value;
   enum align_mode align;
 };
@@ -94,20 +96,22 @@ label_paint (void *vself, const grub_video_rect_t *region)
   if (self->align == align_left)
     left_x = 0;
   else if (self->align == align_center)
-    left_x = ((self->bounds.width
-               - grub_font_get_string_width (self->font, self->text))
-             ) / 2;
+    left_x = (self->bounds.width
+	      - grub_font_get_string_width (self->font, self->text)) / 2;
   else if (self->align == align_right)
     left_x = (self->bounds.width
               - grub_font_get_string_width (self->font, self->text));
   else
     return;   /* Invalid alignment.  */
 
+  if (left_x < 0 || left_x > (int) self->bounds.width)
+    left_x = 0;
+
   grub_video_rect_t vpsave;
   grub_gui_set_viewport (&self->bounds, &vpsave);
   grub_font_draw_string (self->text,
                          self->font,
-                         grub_gui_map_color (self->color),
+                         grub_video_map_rgba_color (self->color),
                          left_x,
                          grub_font_get_ascent (self->font));
   grub_gui_restore_viewport (&vpsave);
@@ -150,6 +154,8 @@ label_get_minimal_size (void *vself, unsigned *width, unsigned *height)
              + grub_font_get_descent (self->font));
 }
 
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+
 static void
 label_set_state (void *vself, int visible, int start __attribute__ ((unused)),
 		 int current, int end __attribute__ ((unused)))
@@ -176,6 +182,17 @@ label_set_property (void *vself, const char *name, const char *value)
 	}
       else
 	{
+	   if (grub_strcmp (value, "@KEYMAP_LONG@") == 0)
+	    value = _("Press enter to boot the selected OS, "
+	       "`e' to edit the commands before booting "
+	       "or `c' for a command-line. ESC to return previous menu.");
+           else if (grub_strcmp (value, "@KEYMAP_MIDDLE@") == 0)
+	    value = _("Press enter to boot the selected OS, "
+	       "`e' to edit the commands before booting "
+	       "or `c' for a command-line.");
+	   else if (grub_strcmp (value, "@KEYMAP_SHORT@") == 0)
+	    value = _("enter: boot, `e': options, `c': cmd-line");
+	   /* FIXME: Add more templates here if needed.  */
 	  self->template = grub_strdup (value);
 	  self->text = grub_xasprintf (value, self->value);
 	}
@@ -186,7 +203,7 @@ label_set_property (void *vself, const char *name, const char *value)
     }
   else if (grub_strcmp (name, "color") == 0)
     {
-      grub_gui_parse_color (value, &self->color);
+      grub_video_parse_color (value, &self->color);
     }
   else if (grub_strcmp (name, "align") == 0)
     {
@@ -219,6 +236,8 @@ label_set_property (void *vself, const char *name, const char *value)
     }
   return GRUB_ERR_NONE;
 }
+
+#pragma GCC diagnostic error "-Wformat-nonliteral"
 
 static struct grub_gui_component_ops label_ops =
 {

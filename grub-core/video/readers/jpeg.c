@@ -33,12 +33,24 @@ GRUB_MOD_LICENSE ("GPLv3+");
 
 #define JPEG_SAMPLING_1x1	0x11
 
-#define JPEG_MARKER_SOI		0xd8
-#define JPEG_MARKER_EOI		0xd9
-#define JPEG_MARKER_DHT		0xc4
-#define JPEG_MARKER_DQT		0xdb
-#define JPEG_MARKER_SOF0	0xc0
-#define JPEG_MARKER_SOS		0xda
+enum
+  {
+    JPEG_MARKER_SOF0 = 0xc0,
+    JPEG_MARKER_DHT  = 0xc4,
+    JPEG_MARKER_SOI  = 0xd8,
+    JPEG_MARKER_EOI  = 0xd9,
+    JPEG_MARKER_RST0 = 0xd0,
+    JPEG_MARKER_RST1 = 0xd1,
+    JPEG_MARKER_RST2 = 0xd2,
+    JPEG_MARKER_RST3 = 0xd3,
+    JPEG_MARKER_RST4 = 0xd4,
+    JPEG_MARKER_RST5 = 0xd5,
+    JPEG_MARKER_RST6 = 0xd6,
+    JPEG_MARKER_RST7 = 0xd7,
+    JPEG_MARKER_SOS  = 0xda,
+    JPEG_MARKER_DQT  = 0xdb,
+    JPEG_MARKER_DRI  = 0xdd,
+  };
 
 #define SHIFT_BITS		8
 #define CONST(x)		((int) ((x) * (1L << SHIFT_BITS) + 0.5))
@@ -66,9 +78,10 @@ struct grub_jpeg_data
 {
   grub_file_t file;
   struct grub_video_bitmap **bitmap;
+  grub_uint8_t *bitmap_ptr;
 
-  int image_width;
-  int image_height;
+  unsigned image_width;
+  unsigned image_height;
 
   grub_uint8_t *huff_value[4];
   int huff_offset[4][16];
@@ -81,9 +94,13 @@ struct grub_jpeg_data
   jpeg_data_unit_t crdu;
   jpeg_data_unit_t cbdu;
 
-  int vs, hs;
+  unsigned vs, hs;
+  int dri;
+  unsigned r1;
 
   int dc_value[3];
+
+  int color_components;
 
   int bit_mask, bit_save;
 };
@@ -282,9 +299,10 @@ grub_jpeg_decode_sof (struct grub_jpeg_data *data)
     return grub_error (GRUB_ERR_BAD_FILE_TYPE, "jpeg: invalid image size");
 
   cc = grub_jpeg_get_byte (data);
-  if (cc != 3)
+  if (cc != 1 && cc != 3)
     return grub_error (GRUB_ERR_BAD_FILE_TYPE,
-		       "jpeg: component count must be 3");
+		       "jpeg: component count must be 1 or 3");
+  data->color_components = cc;
 
   for (i = 0; i < cc; i++)
     {
@@ -311,6 +329,18 @@ grub_jpeg_decode_sof (struct grub_jpeg_data *data)
 
   if (data->file->offset != next_marker)
     grub_error (GRUB_ERR_BAD_FILE_TYPE, "jpeg: extra byte in sof");
+
+  return grub_errno;
+}
+
+static grub_err_t
+grub_jpeg_decode_dri (struct grub_jpeg_data *data)
+{
+  if (grub_jpeg_get_word (data) != 4)
+    return grub_error (GRUB_ERR_BAD_FILE_TYPE,
+	"jpeg: DRI marker length must be 4");
+
+  data->dri = grub_jpeg_get_word (data);
 
   return grub_errno;
 }
@@ -504,7 +534,11 @@ grub_jpeg_ycrcb_to_rgb (int yy, int cr, int cb, grub_uint8_t * rgb)
     dd = 0;
   if (dd > 255)
     dd = 255;
+#ifdef GRUB_CPU_WORDS_BIGENDIAN
+  rgb[2] = dd;
+#else
   *(rgb++) = dd;
+#endif
 
   /* Green  */
   dd = yy - ((cb * CONST (0.34414) + cr * CONST (0.71414)) >> SHIFT_BITS);
@@ -512,7 +546,11 @@ grub_jpeg_ycrcb_to_rgb (int yy, int cr, int cb, grub_uint8_t * rgb)
     dd = 0;
   if (dd > 255)
     dd = 255;
+#ifdef GRUB_CPU_WORDS_BIGENDIAN
+  rgb[1] = dd;
+#else
   *(rgb++) = dd;
+#endif
 
   /* Blue  */
   dd = yy + ((cb * CONST (1.772)) >> SHIFT_BITS);
@@ -520,14 +558,18 @@ grub_jpeg_ycrcb_to_rgb (int yy, int cr, int cb, grub_uint8_t * rgb)
     dd = 0;
   if (dd > 255)
     dd = 255;
+#ifdef GRUB_CPU_WORDS_BIGENDIAN
+  rgb[0] = dd;
+  rgb += 3;
+#else
   *(rgb++) = dd;
+#endif
 }
 
 static grub_err_t
 grub_jpeg_decode_sos (struct grub_jpeg_data *data)
 {
-  int i, cc, r1, c1, nr1, nc1, vb, hb;
-  grub_uint8_t *ptr1;
+  int i, cc;
   grub_uint32_t data_offset;
 
   data_offset = data->file->offset;
@@ -535,9 +577,10 @@ grub_jpeg_decode_sos (struct grub_jpeg_data *data)
 
   cc = grub_jpeg_get_byte (data);
 
-  if (cc != 3)
+  if (cc != 3 && cc != 1)
     return grub_error (GRUB_ERR_BAD_FILE_TYPE,
-		       "jpeg: component count must be 3");
+		       "jpeg: component count must be 1 or 3");
+  data->color_components = cc;
 
   for (i = 0; i < cc; i++)
     {
@@ -563,51 +606,82 @@ grub_jpeg_decode_sos (struct grub_jpeg_data *data)
 				GRUB_VIDEO_BLIT_FORMAT_RGB_888))
     return grub_errno;
 
-  data->bit_mask = 0x0;
+  data->bitmap_ptr = (*data->bitmap)->data;
+  return GRUB_ERR_NONE;
+}
+
+static grub_err_t
+grub_jpeg_decode_data (struct grub_jpeg_data *data)
+{
+  unsigned c1, vb, hb, nr1, nc1;
+  int rst = data->dri;
 
   vb = data->vs * 8;
   hb = data->hs * 8;
   nr1 = (data->image_height + vb - 1) / vb;
   nc1 = (data->image_width + hb - 1) / hb;
 
-  ptr1 = (*data->bitmap)->data;
-  for (r1 = 0; r1 < nr1;
-       r1++, ptr1 += (vb * data->image_width - hb * nc1) * 3)
-    for (c1 = 0; c1 < nc1; c1++, ptr1 += hb * 3)
+  for (; data->r1 < nr1 && (!data->dri || rst);
+       data->r1++, data->bitmap_ptr += (vb * data->image_width - hb * nc1) * 3)
+    for (c1 = 0;  c1 < nc1 && (!data->dri || rst);
+	c1++, rst--, data->bitmap_ptr += hb * 3)
       {
-	int r2, c2, nr2, nc2;
+	unsigned r2, c2, nr2, nc2;
 	grub_uint8_t *ptr2;
 
 	for (r2 = 0; r2 < data->vs; r2++)
 	  for (c2 = 0; c2 < data->hs; c2++)
 	    grub_jpeg_decode_du (data, 0, data->ydu[r2 * 2 + c2]);
 
-	grub_jpeg_decode_du (data, 1, data->cbdu);
-	grub_jpeg_decode_du (data, 2, data->crdu);
+	if (data->color_components >= 3)
+	  {
+	    grub_jpeg_decode_du (data, 1, data->cbdu);
+	    grub_jpeg_decode_du (data, 2, data->crdu);
+	  }
 
 	if (grub_errno)
 	  return grub_errno;
 
-	nr2 = (r1 == nr1 - 1) ? (data->image_height - r1 * vb) : vb;
+	nr2 = (data->r1 == nr1 - 1) ? (data->image_height - data->r1 * vb) : vb;
 	nc2 = (c1 == nc1 - 1) ? (data->image_width - c1 * hb) : hb;
 
-	ptr2 = ptr1;
+	ptr2 = data->bitmap_ptr;
 	for (r2 = 0; r2 < nr2; r2++, ptr2 += (data->image_width - nc2) * 3)
 	  for (c2 = 0; c2 < nc2; c2++, ptr2 += 3)
 	    {
-	      int i0, yy, cr, cb;
+	      unsigned i0;
+	      int yy;
 
 	      i0 = (r2 / data->vs) * 8 + (c2 / data->hs);
-	      cr = data->crdu[i0];
-	      cb = data->cbdu[i0];
-	      yy =
-		data->ydu[(r2 / 8) * 2 + (c2 / 8)][(r2 % 8) * 8 + (c2 % 8)];
+	      yy = data->ydu[(r2 / 8) * 2 + (c2 / 8)][(r2 % 8) * 8 + (c2 % 8)];
 
-	      grub_jpeg_ycrcb_to_rgb (yy, cr, cb, ptr2);
+	      if (data->color_components >= 3)
+		{
+		  int cr, cb;
+		  cr = data->crdu[i0];
+		  cb = data->cbdu[i0];
+		  grub_jpeg_ycrcb_to_rgb (yy, cr, cb, ptr2);
+		}
+	      else
+		{
+		  ptr2[0] = yy;
+		  ptr2[1] = yy;
+		  ptr2[2] = yy;
+		}
 	    }
       }
 
   return grub_errno;
+}
+
+static void
+grub_jpeg_reset (struct grub_jpeg_data *data)
+{
+  data->bit_mask = 0x0;
+
+  data->dc_value[0] = 0;
+  data->dc_value[1] = 0;
+  data->dc_value[2] = 0;
 }
 
 static grub_uint8_t
@@ -640,9 +714,7 @@ grub_jpeg_decode_jpeg (struct grub_jpeg_data *data)
       if (grub_errno)
 	break;
 
-#ifdef JPEG_DEBUG
-      grub_printf ("jpeg marker: %x\n", marker);
-#endif
+      grub_dprintf ("jpeg", "jpeg marker: %x\n", marker);
 
       switch (marker)
 	{
@@ -655,8 +727,22 @@ grub_jpeg_decode_jpeg (struct grub_jpeg_data *data)
 	case JPEG_MARKER_SOF0:	/* Start Of Frame 0.  */
 	  grub_jpeg_decode_sof (data);
 	  break;
+	case JPEG_MARKER_DRI:	/* Define Restart Interval.  */
+	  grub_jpeg_decode_dri (data);
+	  break;
 	case JPEG_MARKER_SOS:	/* Start Of Scan.  */
-	  grub_jpeg_decode_sos (data);
+	  if (grub_jpeg_decode_sos (data))
+	    break;
+	case JPEG_MARKER_RST0:	/* Restart.  */
+	case JPEG_MARKER_RST1:
+	case JPEG_MARKER_RST2:
+	case JPEG_MARKER_RST3:
+	case JPEG_MARKER_RST4:
+	case JPEG_MARKER_RST5:
+	case JPEG_MARKER_RST6:
+	case JPEG_MARKER_RST7:
+	  grub_jpeg_decode_data (data);
+	  grub_jpeg_reset (data);
 	  break;
 	case JPEG_MARKER_EOI:	/* End Of Image.  */
 	  return grub_errno;
@@ -696,8 +782,7 @@ grub_video_reader_jpeg (struct grub_video_bitmap **bitmap,
       grub_jpeg_decode_jpeg (data);
 
       for (i = 0; i < 4; i++)
-	if (data->huff_value[i])
-	  grub_free (data->huff_value[i]);
+	grub_free (data->huff_value[i]);
 
       grub_free (data);
     }
@@ -714,13 +799,13 @@ grub_video_reader_jpeg (struct grub_video_bitmap **bitmap,
 
 #if defined(JPEG_DEBUG)
 static grub_err_t
-grub_cmd_jpegtest (grub_command_t cmd __attribute__ ((unused)),
+grub_cmd_jpegtest (grub_command_t cmdd __attribute__ ((unused)),
 		   int argc, char **args)
 {
   struct grub_video_bitmap *bitmap = 0;
 
   if (argc != 1)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "file name required");
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
 
   grub_video_reader_jpeg (&bitmap, args[0]);
   if (grub_errno != GRUB_ERR_NONE)

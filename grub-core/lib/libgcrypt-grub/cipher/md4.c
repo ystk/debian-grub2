@@ -53,7 +53,6 @@ GRUB_MOD_LICENSE ("GPLv3+");
 
 
 #include "g10lib.h"
-#include "memory.h"
 #include "cipher.h"
 
 #include "bithelp.h"
@@ -101,7 +100,8 @@ transform ( MD4_CONTEXT *ctx, const unsigned char *data )
 #ifdef WORDS_BIGENDIAN
   {
     int i;
-    byte *p2, *p1;
+    byte *p2;
+    const byte *p1;
     for(i=0, p1=data, p2=(byte*)in; i < 16; i++, p2 += 4 )
       {
 	p2[3] = *p1++;
@@ -198,7 +198,7 @@ md4_write ( void *context, const void *inbuf_arg, size_t inlen)
   MD4_CONTEXT *hd = context;
 
   if( hd->count == 64 ) /* flush the buffer */
-    { 
+    {
       transform( hd, hd->buf );
       _gcry_burn_stack (80+6*sizeof(void*));
       hd->count = 0;
@@ -259,15 +259,15 @@ md4_final( void *context )
   lsb <<= 3;
   msb <<= 3;
   msb |= t >> 29;
-  
+
   if( hd->count < 56 )  /* enough room */
     {
       hd->buf[hd->count++] = 0x80; /* pad */
       while( hd->count < 56 )
         hd->buf[hd->count++] = 0;  /* pad */
     }
-  else /* need one extra block */ 
-    { 
+  else /* need one extra block */
+    {
       hd->buf[hd->count++] = 0x80; /* pad character */
       while( hd->count < 64 )
         hd->buf[hd->count++] = 0;
@@ -325,13 +325,16 @@ gcry_md_spec_t _gcry_digest_spec_md4 =
     md4_init, md4_write, md4_final, md4_read,
     sizeof (MD4_CONTEXT)
     ,
+#ifdef GRUB_UTIL
+    .modname = "gcry_md4",
+#endif
     .blocksize = 64
   };
 
 
-
 GRUB_MOD_INIT(gcry_md4)
 {
+  COMPILE_TIME_ASSERT(sizeof (MD4_CONTEXT) <= GRUB_CRYPTO_MAX_MD_CONTEXT_SIZE);
   grub_md_register (&_gcry_digest_spec_md4);
 }
 

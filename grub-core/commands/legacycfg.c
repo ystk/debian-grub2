@@ -35,6 +35,15 @@
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
+/* Helper for legacy_file.  */
+static grub_err_t
+legacy_file_getline (char **line, int cont __attribute__ ((unused)),
+		     void *data __attribute__ ((unused)))
+{
+  *line = 0;
+  return GRUB_ERR_NONE;
+}
+
 static grub_err_t
 legacy_file (const char *filename)
 {
@@ -42,14 +51,6 @@ legacy_file (const char *filename)
   char *entryname = NULL, *entrysrc = NULL;
   grub_menu_t menu;
   char *suffix = grub_strdup ("");
-
-  auto grub_err_t getline (char **line, int cont);
-  grub_err_t getline (char **line, 
-		      int cont __attribute__ ((unused)))
-  {
-    *line = 0;
-    return GRUB_ERR_NONE;
-  }
 
   if (!suffix)
     return grub_errno;
@@ -123,7 +124,8 @@ legacy_file (const char *filename)
 		return grub_errno;
 	      }
 	    args[0] = oldname;
-	    grub_normal_add_menu_entry (1, args, NULL, NULL, NULL, NULL,
+	    grub_normal_add_menu_entry (1, args, NULL, NULL, "legacy",
+					NULL, NULL,
 					entrysrc, 0);
 	    grub_free (args);
 	    entrysrc[0] = 0;
@@ -133,7 +135,7 @@ legacy_file (const char *filename)
 
       if (parsed && !entryname)
 	{
-	  grub_normal_parse_line (parsed, getline);
+	  grub_normal_parse_line (parsed, legacy_file_getline, NULL);
 	  grub_print_error ();
 	  grub_free (parsed);
 	  parsed = NULL;
@@ -174,11 +176,12 @@ legacy_file (const char *filename)
 	  return grub_errno;
 	}
       args[0] = entryname;
-      grub_normal_add_menu_entry (1, args, NULL, NULL, NULL, NULL, entrysrc, 0);
+      grub_normal_add_menu_entry (1, args, NULL, NULL, NULL,
+				  NULL, NULL, entrysrc, 0);
       grub_free (args);
     }
 
-  grub_normal_parse_line (suffix, getline);
+  grub_normal_parse_line (suffix, legacy_file_getline, NULL);
   grub_print_error ();
   grub_free (suffix);
   grub_free (entrysrc);
@@ -194,7 +197,7 @@ grub_cmd_legacy_source (struct grub_command *cmd,
   grub_err_t ret;
 
   if (argc != 1)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "file name required");
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
 
   extractor = (cmd->name[0] == 'e');
   new_env = (cmd->name[extractor ? (sizeof ("extract_legacy_entries_") - 1)
@@ -299,7 +302,7 @@ grub_cmd_legacy_kernel (struct grub_command *mycmd __attribute__ ((unused)),
     }
 
   if (argc < 2)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "filename required");
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
 
   cutargs = grub_malloc (sizeof (cutargs[0]) * (argc - 1));
   cutargc = argc - 1;
@@ -311,7 +314,11 @@ grub_cmd_legacy_kernel (struct grub_command *mycmd __attribute__ ((unused)),
       /* First try Linux.  */
       if (kernel_type == GUESS_IT || kernel_type == LINUX)
 	{
+#ifdef GRUB_MACHINE_PCBIOS
 	  cmd = grub_command_find ("linux16");
+#else
+	  cmd = grub_command_find ("linux");
+#endif
 	  if (cmd)
 	    {
 	      if (!(cmd->func) (cmd, cutargc, cutargs))
@@ -344,7 +351,7 @@ grub_cmd_legacy_kernel (struct grub_command *mycmd __attribute__ ((unused)),
 	int bsd_part = -1;
 	{
 	  grub_device_t dev;
-	  char *hdbiasstr;
+	  const char *hdbiasstr;
 	  int hdbias = 0;
 	  hdbiasstr = grub_env_get ("legacy_hdbias");
 	  if (hdbiasstr)
@@ -355,7 +362,7 @@ grub_cmd_legacy_kernel (struct grub_command *mycmd __attribute__ ((unused)),
 	  dev = grub_device_open (0);
 	  if (dev && dev->disk
 	      && dev->disk->dev->id == GRUB_DISK_DEVICE_BIOSDISK_ID
-	      && dev->disk->dev->id >= 0x80 && dev->disk->dev->id <= 0x90)
+	      && dev->disk->id >= 0x80 && dev->disk->id <= 0x90)
 	    {
 	      struct grub_partition *part = dev->disk->partition;
 	      bsd_device = dev->disk->id - 0x80 - hdbias;
@@ -411,10 +418,11 @@ grub_cmd_legacy_kernel (struct grub_command *mycmd __attribute__ ((unused)),
 	    }
 	  else
 	    {
+	      char rbuf[3] = "-r";
 	      bsdargc = cutargc + 2;
 	      bsdargs = grub_malloc (sizeof (bsdargs[0]) * bsdargc);
 	      grub_memcpy (bsdargs, args, argc * sizeof (bsdargs[0]));
-	      bsdargs[argc] = "-r";
+	      bsdargs[argc] = rbuf;
 	      bsdargs[argc + 1] = bsddevname;
 	      grub_snprintf (bsddevname, sizeof (bsddevname),
 			     "wd%d%c", bsd_device,
@@ -453,7 +461,7 @@ grub_cmd_legacy_kernel (struct grub_command *mycmd __attribute__ ((unused)),
     }
   while (0);
 
-  return grub_error (GRUB_ERR_BAD_OS, "couldn't load file %s\n",
+  return grub_error (GRUB_ERR_BAD_OS, "couldn't load file %s",
 		     args[0]);
 }
 
@@ -465,9 +473,19 @@ grub_cmd_legacy_initrd (struct grub_command *mycmd __attribute__ ((unused)),
 
   if (kernel_type == LINUX)
     {
+#ifdef GRUB_MACHINE_PCBIOS
       cmd = grub_command_find ("initrd16");
+#else
+      cmd = grub_command_find ("initrd");
+#endif
       if (!cmd)
-	return grub_error (GRUB_ERR_BAD_ARGUMENT, "command initrd16 not found");
+	return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("can't find command `%s'"),
+#ifdef GRUB_MACHINE_PCBIOS
+			   "initrd16"
+#else
+			   "initrd"
+#endif
+			   );
 
       return cmd->func (cmd, argc, args);
     }
@@ -475,13 +493,14 @@ grub_cmd_legacy_initrd (struct grub_command *mycmd __attribute__ ((unused)),
     {
       cmd = grub_command_find ("module");
       if (!cmd)
-	return grub_error (GRUB_ERR_BAD_ARGUMENT, "command module not found");
+	return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("can't find command `%s'"),
+			   "module");
 
       return cmd->func (cmd, argc, args);
     }
 
   return grub_error (GRUB_ERR_BAD_ARGUMENT,
-		     "no kernel with module support is loaded in legacy way");
+		     N_("you need to load the kernel first"));
 }
 
 static grub_err_t
@@ -494,7 +513,8 @@ grub_cmd_legacy_initrdnounzip (struct grub_command *mycmd __attribute__ ((unused
     {
       cmd = grub_command_find ("initrd16");
       if (!cmd)
-	return grub_error (GRUB_ERR_BAD_ARGUMENT, "command initrd16 not found");
+	return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("can't find command `%s'"),
+			   "initrd16");
 
       return cmd->func (cmd, argc, args);
     }
@@ -502,14 +522,16 @@ grub_cmd_legacy_initrdnounzip (struct grub_command *mycmd __attribute__ ((unused
     {
       char **newargs;
       grub_err_t err;
+      char nounzipbuf[10] = "--nounzip";
       newargs = grub_malloc ((argc + 1) * sizeof (newargs[0]));
       if (!newargs)
 	return grub_errno;
       grub_memcpy (newargs + 1, args, argc * sizeof (newargs[0]));
-      newargs[0] = "--nounzip";
+      newargs[0] = nounzipbuf;
       cmd = grub_command_find ("module");
       if (!cmd)
-	return grub_error (GRUB_ERR_BAD_ARGUMENT, "command module not found");
+	return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("can't find command `%s'"),
+			   "module");
 
       err = cmd->func (cmd, argc + 1, newargs);
       grub_free (newargs);
@@ -517,7 +539,7 @@ grub_cmd_legacy_initrdnounzip (struct grub_command *mycmd __attribute__ ((unused
     }
 
   return grub_error (GRUB_ERR_BAD_ARGUMENT,
-		     "no kernel with module support is loaded in legacy way");
+		     N_("you need to load the kernel first"));
 }
 
 static grub_err_t
@@ -541,11 +563,16 @@ static int
 check_password_md5_real (const char *entered,
 			 struct legacy_md5_password *pw)
 {
-  int enteredlen = grub_strlen (entered);
+  grub_size_t enteredlen = grub_strlen (entered);
   unsigned char alt_result[MD5_HASHLEN];
   unsigned char *digest;
-  grub_uint8_t ctx[GRUB_MD_MD5->contextsize];
-  int i;
+  grub_uint8_t *ctx;
+  grub_size_t i;
+  int ret;
+
+  ctx = grub_zalloc (GRUB_MD_MD5->contextsize);
+  if (!ctx)
+    return 0;
 
   GRUB_MD_MD5->init (ctx);
   GRUB_MD_MD5->write (ctx, entered, enteredlen);
@@ -591,7 +618,9 @@ check_password_md5_real (const char *entered,
       GRUB_MD_MD5->final (ctx);
     }
 
-  return (grub_crypto_memcmp (digest, pw->hash, MD5_HASHLEN) == 0);
+  ret = (grub_crypto_memcmp (digest, pw->hash, MD5_HASHLEN) == 0);
+  grub_free (ctx);
+  return ret;
 }
 
 static grub_err_t
@@ -696,7 +725,7 @@ grub_cmd_legacy_password (struct grub_command *mycmd __attribute__ ((unused)),
   struct legacy_md5_password *pw = NULL;
 
   if (argc == 0)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "arguments expected");
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("one argument expected"));
   if (args[0][0] != '-' || args[0][1] != '-')
     return grub_normal_set_password ("legacy", args[0]);
 
@@ -714,18 +743,12 @@ grub_cmd_legacy_password (struct grub_command *mycmd __attribute__ ((unused)),
 					      NULL);
 }
 
-static grub_err_t
-grub_cmd_legacy_check_password (struct grub_command *mycmd __attribute__ ((unused)),
-				int argc, char **args)
+int
+grub_legacy_check_md5_password (int argc, char **args,
+				char *entered)
 {
   struct legacy_md5_password *pw = NULL;
-  char entered[GRUB_AUTH_MAX_PASSLEN];
-
-  if (argc == 0)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "arguments expected");
-  grub_printf ("Enter password:");
-  if (!grub_password_get (entered, GRUB_AUTH_MAX_PASSLEN))
-    return GRUB_ACCESS_DENIED;
+  int ret;
 
   if (args[0][0] != '-' || args[0][1] != '-')
     {
@@ -734,17 +757,33 @@ grub_cmd_legacy_check_password (struct grub_command *mycmd __attribute__ ((unuse
       grub_memset (correct, 0, sizeof (correct));
       grub_strncpy (correct, args[0], sizeof (correct));
 
-      if (grub_crypto_memcmp (entered, correct, GRUB_AUTH_MAX_PASSLEN) != 0)
-	return GRUB_ACCESS_DENIED;
-      return GRUB_ERR_NONE;
+      return grub_crypto_memcmp (entered, correct, GRUB_AUTH_MAX_PASSLEN) == 0;
     }
 
   pw = parse_legacy_md5 (argc, args);
 
   if (!pw)
+    return 0;
+
+  ret = check_password_md5_real (entered, pw);
+  grub_free (pw);
+  return ret;
+}
+
+static grub_err_t
+grub_cmd_legacy_check_password (struct grub_command *mycmd __attribute__ ((unused)),
+				int argc, char **args)
+{
+  char entered[GRUB_AUTH_MAX_PASSLEN];
+
+  if (argc == 0)
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("one argument expected"));
+  grub_puts_ (N_("Enter password: "));
+  if (!grub_password_get (entered, GRUB_AUTH_MAX_PASSLEN))
     return GRUB_ACCESS_DENIED;
 
-  if (!check_password_md5_real (entered, pw))
+  if (!grub_legacy_check_md5_password (argc, args,
+				       entered))
     return GRUB_ACCESS_DENIED;
 
   return GRUB_ERR_NONE;
@@ -761,6 +800,8 @@ GRUB_MOD_INIT(legacycfg)
     = grub_register_command ("legacy_source",
 			     grub_cmd_legacy_source,
 			     N_("FILE"),
+			     /* TRANSLATORS: "legacy config" means
+				"config as used by grub-legacy".  */
 			     N_("Parse legacy config in same context"));
   cmd_configfile
     = grub_register_command ("legacy_configfile",
@@ -781,26 +822,26 @@ GRUB_MOD_INIT(legacycfg)
   cmd_kernel = grub_register_command ("legacy_kernel",
 				      grub_cmd_legacy_kernel,
 				      N_("[--no-mem-option] [--type=TYPE] FILE [ARG ...]"),
-				      N_("Simulate grub-legacy kernel command"));
+				      N_("Simulate grub-legacy `kernel' command"));
 
   cmd_initrd = grub_register_command ("legacy_initrd",
 				      grub_cmd_legacy_initrd,
 				      N_("FILE [ARG ...]"),
-				      N_("Simulate grub-legacy initrd command"));
+				      N_("Simulate grub-legacy `initrd' command"));
   cmd_initrdnounzip = grub_register_command ("legacy_initrd_nounzip",
 					     grub_cmd_legacy_initrdnounzip,
 					     N_("FILE [ARG ...]"),
-					     N_("Simulate grub-legacy modulenounzip command"));
+					     N_("Simulate grub-legacy `modulenounzip' command"));
 
   cmd_password = grub_register_command ("legacy_password",
 					grub_cmd_legacy_password,
 					N_("[--md5] PASSWD [FILE]"),
-					N_("Simulate grub-legacy password command"));
+					N_("Simulate grub-legacy `password' command"));
 
   cmd_check_password = grub_register_command ("legacy_check_password",
 					      grub_cmd_legacy_check_password,
 					      N_("[--md5] PASSWD [FILE]"),
-					      N_("Simulate grub-legacy password command in menuentry mode"));
+					      N_("Simulate grub-legacy `password' command in menu entry mode"));
 
 }
 

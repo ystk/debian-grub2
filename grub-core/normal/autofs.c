@@ -32,11 +32,21 @@ static int
 autoload_fs_module (void)
 {
   grub_named_list_t p;
+  int ret = 0;
+  grub_file_filter_t grub_file_filters_was[GRUB_FILE_FILTER_MAX];
+
+  grub_memcpy (grub_file_filters_was, grub_file_filters_enabled,
+	       sizeof (grub_file_filters_enabled));
+  grub_memcpy (grub_file_filters_enabled, grub_file_filters_all,
+	       sizeof (grub_file_filters_enabled));
 
   while ((p = fs_module_list) != NULL)
     {
       if (! grub_dl_get (p->name) && grub_dl_load (p->name))
-	return 1;
+	{
+	  ret = 1;
+	  break;
+	}
 
       if (grub_errno)
 	grub_print_error ();
@@ -46,7 +56,10 @@ autoload_fs_module (void)
       grub_free (p);
     }
 
-  return 0;
+  grub_memcpy (grub_file_filters_enabled, grub_file_filters_was,
+	       sizeof (grub_file_filters_enabled));
+
+  return ret;
 }
 
 /* Read the file fs.lst for auto-loading.  */
@@ -57,7 +70,8 @@ read_fs_list (const char *prefix)
     {
       char *filename;
 
-      filename = grub_xasprintf ("%s/fs.lst", prefix);
+      filename = grub_xasprintf ("%s/" GRUB_TARGET_CPU "-" GRUB_PLATFORM
+				 "/fs.lst", prefix);
       if (filename)
 	{
 	  grub_file_t file;
@@ -103,13 +117,20 @@ read_fs_list (const char *prefix)
 
 		  /* If the line is empty, skip it.  */
 		  if (p >= q)
-		    continue;
+		    {
+		      grub_free (buf);
+		      continue;
+		    }
 
 		  fs_mod = grub_malloc (sizeof (*fs_mod));
 		  if (! fs_mod)
-		    continue;
+		    {
+		      grub_free (buf);
+		      continue;
+		    }
 
 		  fs_mod->name = grub_strdup (p);
+		  grub_free (buf);
 		  if (! fs_mod->name)
 		    {
 		      grub_free (fs_mod);

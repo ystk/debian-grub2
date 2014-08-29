@@ -33,6 +33,7 @@
 #include <grub/cache.h>
 #include <grub/time.h>
 #include <grub/cpu/tsc.h>
+#include <grub/machine/time.h>
 
 struct mem_region
 {
@@ -45,52 +46,62 @@ struct mem_region
 static struct mem_region mem_regions[MAX_REGIONS];
 static int num_regions;
 
-static char *
-make_install_device (void)
+void (*grub_pc_net_config) (char **device, char **path);
+
+/*
+ *	return the real time in ticks, of which there are about
+ *	18-20 per second
+ */
+grub_uint64_t
+grub_rtc_get_time_ms (void)
 {
+  struct grub_bios_int_registers regs;
+
+  regs.eax = 0;
+  regs.flags = GRUB_CPU_INT_FLAGS_DEFAULT;
+  grub_bios_interrupt (0x1a, &regs);
+
+  return ((regs.ecx << 16) | (regs.edx & 0xffff)) * 55ULL;
+}
+
+void
+grub_machine_get_bootlocation (char **device, char **path)
+{
+  char *ptr;
+  grub_uint8_t boot_drive, dos_part, bsd_part;
+
+  boot_drive = (grub_boot_device >> 24);
+  dos_part = (grub_boot_device >> 16);
+  bsd_part = (grub_boot_device >> 8);
+
+  /* No hardcoded root partition - make it from the boot drive and the
+     partition number encoded at the install time.  */
+  if (boot_drive == GRUB_BOOT_MACHINE_PXE_DL)
+    {
+      if (grub_pc_net_config)
+	grub_pc_net_config (device, path);
+      return;
+    }
+
   /* XXX: This should be enough.  */
-  char dev[100], *ptr = dev;
+#define DEV_SIZE 100
+  *device = grub_malloc (DEV_SIZE);
+  ptr = *device;
+  grub_snprintf (*device, DEV_SIZE,
+		 "%cd%u", (boot_drive & 0x80) ? 'h' : 'f',
+		 boot_drive & 0x7f);
+  ptr += grub_strlen (ptr);
 
-  if (grub_prefix[0] != '(')
-    {
-      /* No hardcoded root partition - make it from the boot drive and the
-	 partition number encoded at the install time.  */
-      if (grub_boot_drive == GRUB_BOOT_MACHINE_PXE_DL)
-	{
-	  grub_strcpy (dev, "(pxe");
-	  ptr += sizeof ("(pxe") - 1;
-	}
-      else
-	{
-	  grub_snprintf (dev, sizeof (dev),
-			 "(%cd%u", (grub_boot_drive & 0x80) ? 'h' : 'f',
-			 grub_boot_drive & 0x7f);
-	  ptr += grub_strlen (ptr);
+  if (dos_part != 0xff)
+    grub_snprintf (ptr, DEV_SIZE - (ptr - *device),
+		   ",%u", dos_part + 1);
+  ptr += grub_strlen (ptr);
 
-	  if (grub_install_dos_part >= 0)
-	    grub_snprintf (ptr, sizeof (dev) - (ptr - dev),
-			   ",%u", grub_install_dos_part + 1);
-	  ptr += grub_strlen (ptr);
-
-	  if (grub_install_bsd_part >= 0)
-	    grub_snprintf (ptr, sizeof (dev) - (ptr - dev), ",%u",
-			   grub_install_bsd_part + 1);
-	  ptr += grub_strlen (ptr);
-	}
-
-      grub_snprintf (ptr, sizeof (dev) - (ptr - dev), ")%s", grub_prefix);
-      grub_strcpy (grub_prefix, dev);
-    }
-  else if (grub_prefix[1] == ',' || grub_prefix[1] == ')')
-    {
-      /* We have a prefix, but still need to fill in the boot drive.  */
-      grub_snprintf (dev, sizeof (dev),
-		     "(%cd%u%s", (grub_boot_drive & 0x80) ? 'h' : 'f',
-		     grub_boot_drive & 0x7f, grub_prefix + 1);
-      grub_strcpy (grub_prefix, dev);
-    }
-
-  return grub_prefix;
+  if (bsd_part != 0xff)
+    grub_snprintf (ptr, DEV_SIZE - (ptr - *device), ",%u",
+		   bsd_part + 1);
+  ptr += grub_strlen (ptr);
+  *ptr = 0;
 }
 
 /* Add a memory region.  */
@@ -140,6 +151,39 @@ compact_mem_regions (void)
       }
 }
 
+grub_addr_t grub_modbase;
+extern grub_uint8_t _start[], _edata[];
+
+/* Helper for grub_machine_init.  */
+static int
+mmap_iterate_hook (grub_uint64_t addr, grub_uint64_t size,
+		   grub_memory_type_t type,
+		   void *data __attribute__ ((unused)))
+{
+  /* Avoid the lower memory.  */
+  if (addr < GRUB_MEMORY_MACHINE_UPPER_START)
+    {
+      if (size <= GRUB_MEMORY_MACHINE_UPPER_START - addr)
+	return 0;
+
+      size -= GRUB_MEMORY_MACHINE_UPPER_START - addr;
+      addr = GRUB_MEMORY_MACHINE_UPPER_START;
+    }
+
+  /* Ignore >4GB.  */
+  if (addr <= 0xFFFFFFFF && type == GRUB_MEMORY_AVAILABLE)
+    {
+      grub_size_t len;
+
+      len = (grub_size_t) ((addr + size > 0xFFFFFFFF)
+	     ? 0xFFFFFFFF - addr
+	     : size);
+      add_mem_region (addr, len);
+    }
+
+  return 0;
+}
+
 void
 grub_machine_init (void)
 {
@@ -147,6 +191,9 @@ grub_machine_init (void)
 #if 0
   int grub_lower_mem;
 #endif
+  grub_addr_t modend;
+
+  grub_modbase = GRUB_MEMORY_MACHINE_DECOMPRESSION_ADDR + (_edata - _start);
 
   /* Initialize the console as early as possible.  */
   grub_console_init ();
@@ -172,63 +219,29 @@ grub_machine_init (void)
 		    grub_lower_mem - GRUB_MEMORY_MACHINE_RESERVED_END);
 #endif
 
-  auto int NESTED_FUNC_ATTR hook (grub_uint64_t, grub_uint64_t,
-				  grub_memory_type_t);
-  int NESTED_FUNC_ATTR hook (grub_uint64_t addr, grub_uint64_t size,
-			     grub_memory_type_t type)
-    {
-      /* Avoid the lower memory.  */
-      if (addr < 0x100000)
-	{
-	  if (size <= 0x100000 - addr)
-	    return 0;
-
-	  size -= 0x100000 - addr;
-	  addr = 0x100000;
-	}
-
-      /* Ignore >4GB.  */
-      if (addr <= 0xFFFFFFFF && type == GRUB_MEMORY_AVAILABLE)
-	{
-	  grub_size_t len;
-
-	  len = (grub_size_t) ((addr + size > 0xFFFFFFFF)
-		 ? 0xFFFFFFFF - addr
-		 : size);
-	  add_mem_region (addr, len);
-	}
-
-      return 0;
-    }
-
-  grub_machine_mmap_iterate (hook);
+  grub_machine_mmap_iterate (mmap_iterate_hook, NULL);
 
   compact_mem_regions ();
 
+  modend = grub_modules_get_end ();
   for (i = 0; i < num_regions; i++)
-      grub_mm_init_region ((void *) mem_regions[i].addr, mem_regions[i].size);
+    {
+      grub_addr_t beg = mem_regions[i].addr;
+      grub_addr_t fin = mem_regions[i].addr + mem_regions[i].size;
+      if (modend && beg < modend)
+	beg = modend;
+      if (beg >= fin)
+	continue;
+      grub_mm_init_region ((void *) beg, fin - beg);
+    }
 
   grub_tsc_init ();
 }
 
 void
-grub_machine_set_prefix (void)
+grub_machine_fini (int flags)
 {
-  /* Initialize the prefix.  */
-  grub_env_set ("prefix", make_install_device ());
-}
-
-void
-grub_machine_fini (void)
-{
-  grub_console_fini ();
+  if (flags & GRUB_LOADER_FLAG_NORETURN)
+    grub_console_fini ();
   grub_stop_floppy ();
-}
-
-/* Return the end of the core image.  */
-grub_addr_t
-grub_arch_modules_addr (void)
-{
-  return GRUB_MEMORY_MACHINE_DECOMPRESSION_ADDR
-    + (grub_kernel_image_size - GRUB_KERNEL_MACHINE_RAW_SIZE);
 }

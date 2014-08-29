@@ -30,9 +30,13 @@ static char *memdisk_addr;
 static grub_off_t memdisk_size = 0;
 
 static int
-grub_memdisk_iterate (int (*hook) (const char *name))
+grub_memdisk_iterate (grub_disk_dev_iterate_hook_t hook, void *hook_data,
+		      grub_disk_pull_t pull)
 {
-  return hook ("memdisk");
+  if (pull != GRUB_DISK_PULL_NONE)
+    return 0;
+
+  return hook ("memdisk", hook_data);
 }
 
 static grub_err_t
@@ -42,7 +46,8 @@ grub_memdisk_open (const char *name, grub_disk_t disk)
       return grub_error (GRUB_ERR_UNKNOWN_DEVICE, "not a memdisk");
 
   disk->total_sectors = memdisk_size / GRUB_DISK_SECTOR_SIZE;
-  disk->id = (unsigned long) "mdsk";
+  disk->max_agglomerate = GRUB_DISK_MAX_MAX_AGGLOMERATE;
+  disk->id = 0;
 
   return GRUB_ERR_NONE;
 }
@@ -82,30 +87,24 @@ static struct grub_disk_dev grub_memdisk_dev =
 
 GRUB_MOD_INIT(memdisk)
 {
-  auto int hook (struct grub_module_header *);
-  int hook (struct grub_module_header *header)
-    {
-      if (header->type == OBJ_TYPE_MEMDISK)
-	{
-	  char *memdisk_orig_addr;
-	  memdisk_orig_addr = (char *) header + sizeof (struct grub_module_header);
+  struct grub_module_header *header;
+  FOR_MODULES (header)
+    if (header->type == OBJ_TYPE_MEMDISK)
+      {
+	char *memdisk_orig_addr;
+	memdisk_orig_addr = (char *) header + sizeof (struct grub_module_header);
 
-	  grub_dprintf ("memdisk", "Found memdisk image at %p\n", memdisk_orig_addr);
+	grub_dprintf ("memdisk", "Found memdisk image at %p\n", memdisk_orig_addr);
 
-	  memdisk_size = header->size - sizeof (struct grub_module_header);
-	  memdisk_addr = grub_malloc (memdisk_size);
+	memdisk_size = header->size - sizeof (struct grub_module_header);
+	memdisk_addr = grub_malloc (memdisk_size);
 
-	  grub_dprintf ("memdisk", "Copying memdisk image to dynamic memory\n");
-	  grub_memmove (memdisk_addr, memdisk_orig_addr, memdisk_size);
+	grub_dprintf ("memdisk", "Copying memdisk image to dynamic memory\n");
+	grub_memmove (memdisk_addr, memdisk_orig_addr, memdisk_size);
 
-	  grub_disk_dev_register (&grub_memdisk_dev);
-	  return 1;
-	}
-
-      return 0;
-    }
-
-  grub_module_iterate (hook);
+	grub_disk_dev_register (&grub_memdisk_dev);
+	break;
+      }
 }
 
 GRUB_MOD_FINI(memdisk)

@@ -38,7 +38,7 @@ struct grub_sun_pc_partition_descriptor
   grub_uint16_t unused;
   grub_uint32_t start_sector;
   grub_uint32_t num_sectors;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_sun_pc_block
 {
@@ -47,19 +47,19 @@ struct grub_sun_pc_block
   grub_uint8_t unused2[244];
   grub_uint16_t  magic;         /* Magic number.  */
   grub_uint16_t  csum;          /* Label xor'd checksum.  */
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 static struct grub_partition_map grub_sun_pc_partition_map;
 
 /* Verify checksum (true=ok).  */
 static int
-grub_sun_is_valid (struct grub_sun_pc_block *label)
+grub_sun_is_valid (grub_uint16_t *label)
 {
   grub_uint16_t *pos;
   grub_uint16_t sum = 0;
 
-  for (pos = (grub_uint16_t *) label;
-       pos < (grub_uint16_t *) (label + 1);
+  for (pos = label;
+       pos < (label + sizeof (struct grub_sun_pc_block) / 2);
        pos++)
     sum ^= *pos;
 
@@ -68,11 +68,15 @@ grub_sun_is_valid (struct grub_sun_pc_block *label)
 
 static grub_err_t
 sun_pc_partition_map_iterate (grub_disk_t disk,
-			      int (*hook) (grub_disk_t disk,
-					   const grub_partition_t partition))
+			      grub_partition_iterate_hook_t hook,
+			      void *hook_data)
 {
   grub_partition_t p;
-  struct grub_sun_pc_block block;
+  union
+  {
+    struct grub_sun_pc_block sun;
+    grub_uint16_t raw[0];
+  } block;
   int partnum;
   grub_err_t err;
 
@@ -88,14 +92,14 @@ sun_pc_partition_map_iterate (grub_disk_t disk,
       return err;
     }
   
-  if (GRUB_PARTMAP_SUN_PC_MAGIC != grub_le_to_cpu16 (block.magic))
+  if (GRUB_PARTMAP_SUN_PC_MAGIC != grub_le_to_cpu16 (block.sun.magic))
     {
       grub_free (p);
       return grub_error (GRUB_ERR_BAD_PART_TABLE, 
 			 "not a sun_pc partition table");
     }
 
-  if (! grub_sun_is_valid (&block))
+  if (! grub_sun_is_valid (block.raw))
     {
       grub_free (p);
       return grub_error (GRUB_ERR_BAD_PART_TABLE, "invalid checksum");
@@ -107,17 +111,18 @@ sun_pc_partition_map_iterate (grub_disk_t disk,
     {
       struct grub_sun_pc_partition_descriptor *desc;
 
-      if (block.partitions[partnum].id == 0
-	  || block.partitions[partnum].id == GRUB_PARTMAP_SUN_PC_WHOLE_DISK_ID)
+      if (block.sun.partitions[partnum].id == 0
+	  || block.sun.partitions[partnum].id
+	  == GRUB_PARTMAP_SUN_PC_WHOLE_DISK_ID)
 	continue;
 
-      desc = &block.partitions[partnum];
+      desc = &block.sun.partitions[partnum];
       p->start = grub_le_to_cpu32 (desc->start_sector);
       p->len = grub_le_to_cpu32 (desc->num_sectors);
       p->number = partnum;
       if (p->len)
 	{
-	  if (hook (disk, p))
+	  if (hook (disk, p, hook_data))
 	    partnum = GRUB_PARTMAP_SUN_PC_MAX_PARTS;
 	}
     }

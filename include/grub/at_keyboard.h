@@ -35,4 +35,8 @@
 #define KEYBOARD_ISREADY(x)	((x) & 0x01)
 #define KEYBOARD_SCANCODE(x)	((x) & 0x7f)
 
+extern void grub_at_keyboard_init (void);
+extern void grub_at_keyboard_fini (void);
+int grub_at_keyboard_is_alive (void);
+
 #endif

@@ -32,12 +32,10 @@ GRUB_MOD_LICENSE ("GPLv3+");
  */
 
 
-#ifdef HAVE_STDINT_H 
-# include <stdint.h>
+#ifdef HAVE_STDINT_H
 #endif
 
 #include "g10lib.h"
-#include "memory.h"
 #include "bithelp.h"
 #include "cipher.h"
 #include "hash-common.h"
@@ -55,7 +53,7 @@ GRUB_MOD_LICENSE ("GPLv3+");
 #define TRANSFORM(x,d,n) transform ((x), (d), (n))
 
 
-typedef struct 
+typedef struct
 {
   u32           h0,h1,h2,h3,h4;
   u32           nblocks;
@@ -111,7 +109,7 @@ transform (SHA1_CONTEXT *hd, const unsigned char *data, size_t nblocks)
   register u32 a, b, c, d, e; /* Local copies of the chaining variables.  */
   register u32 tm;            /* Helper.  */
   u32 x[16];                  /* The array we work on. */
-  
+
   /* Loop over all blocks.  */
   for ( ;nblocks; nblocks--)
     {
@@ -288,7 +286,7 @@ static void
 sha1_final(void *context)
 {
   SHA1_CONTEXT *hd = context;
-  
+
   u32 t, msb, lsb;
   unsigned char *p;
 
@@ -365,7 +363,7 @@ sha1_read( void *context )
 
 
 
-/* 
+/*
      Self-test section.
  */
 
@@ -402,13 +400,16 @@ gcry_md_spec_t _gcry_digest_spec_sha1 =
     sha1_init, sha1_write, sha1_final, sha1_read,
     sizeof (SHA1_CONTEXT)
     ,
+#ifdef GRUB_UTIL
+    .modname = "gcry_sha1",
+#endif
     .blocksize = 64
   };
 
 
-
 GRUB_MOD_INIT(gcry_sha1)
 {
+  COMPILE_TIME_ASSERT(sizeof (SHA1_CONTEXT) <= GRUB_CRYPTO_MAX_MD_CONTEXT_SIZE);
   grub_md_register (&_gcry_digest_spec_sha1);
 }
 

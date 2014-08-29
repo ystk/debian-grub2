@@ -24,7 +24,6 @@ GRUB_MOD_LICENSE ("GPLv3+");
 
 
 #include "g10lib.h"
-#include "memory.h"
 #include "rmd.h"
 #include "cipher.h" /* Only used for the rmd160_hash_buffer() prototype. */
 
@@ -169,7 +168,8 @@ transform ( RMD160_CONTEXT *hd, const unsigned char *data )
   u32 x[16];
   {
     int i;
-    byte *p2, *p1;
+    byte *p2;
+    const byte *p1;
     for (i=0, p1=data, p2=(byte*)x; i < 16; i++, p2 += 4 )
       {
         p2[3] = *p1++;
@@ -415,7 +415,7 @@ rmd160_write ( void *context, const void *inbuf_arg, size_t inlen)
     }
   if( !inbuf )
     return;
-  if( hd->count ) 
+  if( hd->count )
     {
       for( ; inlen && hd->count < 64; inlen-- )
         hd->buf[hd->count++] = *inbuf++;
@@ -443,20 +443,6 @@ rmd160_write ( void *context, const void *inbuf_arg, size_t inlen)
  * other functions, use rmd160_init to initialize internal variables.
  * Returns: 16 bytes in buffer with the mixed contentes of buffer.
  */
-void
-_gcry_rmd160_mixblock ( RMD160_CONTEXT *hd, void *blockof64byte )
-{
-  char *p = blockof64byte;
-
-  transform ( hd, blockof64byte );
-#define X(a) do { *(u32*)p = hd->h##a ; p += 4; } while(0)
-  X(0);
-  X(1);
-  X(2);
-  X(3);
-  X(4);
-#undef X
-}
 
 
 /* The routine terminates the computation
@@ -468,7 +454,7 @@ rmd160_final( void *context )
   RMD160_CONTEXT *hd = context;
   u32 t, msb, lsb;
   byte *p;
-  
+
   rmd160_write(hd, NULL, 0); /* flush */;
 
   t = hd->nblocks;
@@ -560,12 +546,16 @@ gcry_md_spec_t _gcry_digest_spec_rmd160 =
     _gcry_rmd160_init, rmd160_write, rmd160_final, rmd160_read,
     sizeof (RMD160_CONTEXT)
     ,
+#ifdef GRUB_UTIL
+    .modname = "gcry_rmd160",
+#endif
     .blocksize = 64
   };
 
 
 GRUB_MOD_INIT(gcry_rmd160)
 {
+  COMPILE_TIME_ASSERT(sizeof (RMD160_CONTEXT) <= GRUB_CRYPTO_MAX_MD_CONTEXT_SIZE);
   grub_md_register (&_gcry_digest_spec_rmd160);
 }
 

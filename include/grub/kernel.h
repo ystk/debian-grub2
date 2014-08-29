@@ -26,14 +26,16 @@ enum
 {
   OBJ_TYPE_ELF,
   OBJ_TYPE_MEMDISK,
-  OBJ_TYPE_CONFIG
+  OBJ_TYPE_CONFIG,
+  OBJ_TYPE_PREFIX,
+  OBJ_TYPE_PUBKEY
 };
 
 /* The module header.  */
 struct grub_module_header
 {
   /* The type of object.  */
-  grub_uint8_t type;
+  grub_uint32_t type;
   /* The size of object (including this header).  */
   grub_uint32_t size;
 };
@@ -62,35 +64,65 @@ struct grub_module_info64
   grub_uint64_t size;
 };
 
+#ifndef GRUB_UTIL
+/* Space isn't reusable on some platforms.  */
+/* On Qemu the preload space is readonly.  */
+/* On emu there is no preload space.  */
+/* On ieee1275 our code assumes that heap is p=v which isn't guaranteed for module space.  */
+#if defined (GRUB_MACHINE_QEMU) || defined (GRUB_MACHINE_EMU) \
+  || defined (GRUB_MACHINE_EFI) \
+  || (defined (GRUB_MACHINE_IEEE1275) && !defined (__sparc__))
+#define GRUB_KERNEL_PRELOAD_SPACE_REUSABLE 0
+#endif
+
+#if defined (GRUB_MACHINE_PCBIOS) || defined (GRUB_MACHINE_COREBOOT) \
+  || defined (GRUB_MACHINE_MULTIBOOT) || defined (GRUB_MACHINE_MIPS_QEMU_MIPS) \
+  || defined (GRUB_MACHINE_MIPS_LOONGSON) || defined (GRUB_MACHINE_ARC) \
+  || (defined (__sparc__) && defined (GRUB_MACHINE_IEEE1275)) || defined (GRUB_MACHINE_UBOOT) || defined (GRUB_MACHINE_XEN)
+/* FIXME: stack is between 2 heap regions. Move it.  */
+#define GRUB_KERNEL_PRELOAD_SPACE_REUSABLE 1
+#endif
+
+#ifndef GRUB_KERNEL_PRELOAD_SPACE_REUSABLE
+#error "Please check if preload space is reusable on this platform!"
+#endif
+
 #if GRUB_TARGET_SIZEOF_VOID_P == 8
 #define grub_module_info grub_module_info64
 #else
 #define grub_module_info grub_module_info32
 #endif
 
-extern grub_addr_t grub_arch_modules_addr (void);
+extern grub_addr_t EXPORT_VAR (grub_modbase);
 
-extern void EXPORT_FUNC(grub_module_iterate) (int (*hook) (struct grub_module_header *));
+#define FOR_MODULES(var)  for (\
+  var = (grub_modbase && ((((struct grub_module_info *) grub_modbase)->magic) == GRUB_MODULE_MAGIC)) ? (struct grub_module_header *) \
+    (grub_modbase + (((struct grub_module_info *) grub_modbase)->offset)) : 0;\
+  var && (grub_addr_t) var \
+    < (grub_modbase + (((struct grub_module_info *) grub_modbase)->size));    \
+  var = (struct grub_module_header *)					\
+    (((grub_uint32_t *) var) + ((((struct grub_module_header *) var)->size + sizeof (grub_addr_t) - 1) / sizeof (grub_addr_t)) * (sizeof (grub_addr_t) / sizeof (grub_uint32_t))))
 
 grub_addr_t grub_modules_get_end (void);
 
+#endif
+
 /* The start point of the C code.  */
-void grub_main (void);
+void grub_main (void) __attribute__ ((noreturn));
 
 /* The machine-specific initialization. This must initialize memory.  */
 void grub_machine_init (void);
 
 /* The machine-specific finalization.  */
-void EXPORT_FUNC(grub_machine_fini) (void);
+void EXPORT_FUNC(grub_machine_fini) (int flags);
 
 /* The machine-specific prefix initialization.  */
-void grub_machine_set_prefix (void);
+void
+grub_machine_get_bootlocation (char **device, char **path);
 
 /* Register all the exported symbols. This is automatically generated.  */
 void grub_register_exported_symbols (void);
 
-#if ! defined (ASM_FILE) && !defined (GRUB_MACHINE_EMU)
-extern char grub_prefix[];
-#endif
+extern void (*EXPORT_VAR(grub_net_poll_cards_idle)) (void);
 
 #endif /* ! GRUB_KERNEL_HEADER */

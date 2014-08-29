@@ -28,13 +28,27 @@
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
+typedef grub_err_t (*grub_video_fb_doublebuf_update_screen_t) (void);
+typedef volatile void *framebuf_t;
+
+struct dirty
+{
+  int first_line;
+  int last_line;
+};
+
 static struct
 {
   struct grub_video_fbrender_target *render_target;
-  struct grub_video_fbrender_target *front_target;
   struct grub_video_fbrender_target *back_target;
   struct grub_video_palette_data *palette;
+  framebuf_t pages[2];
+
   unsigned int palette_size;
+
+  struct dirty current_dirty;
+  struct dirty previous_dirty;
+
   /* For page flipping strategy.  */
   int displayed_page;           /* The page # that is the front buffer.  */
   int render_page;              /* The page # that is the back buffer.  */
@@ -45,8 +59,10 @@ static struct
 
 /* Specify "standard" VGA palette, some video cards may
    need this and this will also be used when using RGB modes.  */
-struct grub_video_palette_data grub_video_fbstd_colors[GRUB_VIDEO_FBSTD_NUMCOLORS] =
+struct grub_video_palette_data grub_video_fbstd_colors[GRUB_VIDEO_FBSTD_EXT_NUMCOLORS] =
   {
+    /* Standard (3-bit) colors.  */
+
     // {R, G, B, A}
     {0x00, 0x00, 0x00, 0xFF}, // 0 = black
     {0x00, 0x00, 0xA8, 0xFF}, // 1 = blue
@@ -57,6 +73,7 @@ struct grub_video_palette_data grub_video_fbstd_colors[GRUB_VIDEO_FBSTD_NUMCOLOR
     {0xA8, 0x54, 0x00, 0xFF}, // 6 = brown
     {0xA8, 0xA8, 0xA8, 0xFF}, // 7 = light gray
 
+    /* Bright (4-bit) colors.  */
     {0x54, 0x54, 0x54, 0xFF}, // 8 = dark gray
     {0x54, 0x54, 0xFE, 0xFF}, // 9 = bright blue
     {0x54, 0xFE, 0x54, 0xFF}, // 10 = bright green
@@ -64,7 +81,249 @@ struct grub_video_palette_data grub_video_fbstd_colors[GRUB_VIDEO_FBSTD_NUMCOLOR
     {0xFE, 0x54, 0x54, 0xFF}, // 12 = bright red
     {0xFE, 0x54, 0xFE, 0xFF}, // 13 = bright magenta
     {0xFE, 0xFE, 0x54, 0xFF}, // 14 = yellow
-    {0xFE, 0xFE, 0xFE, 0xFF}  // 15 = white
+    {0xFE, 0xFE, 0xFE, 0xFF}, // 15 = white
+
+    /* Extended (8-bit) colors. Completes preceding colors to full RGB332.  */
+    {0x00, 0x00, 0x55, 0xFF}, // RGB332 = (0, 0, 1)
+    {0x00, 0x00, 0xFF, 0xFF}, // RGB332 = (0, 0, 3)
+    {0x00, 0x24, 0x00, 0xFF}, // RGB332 = (0, 1, 0)
+    {0x00, 0x24, 0x55, 0xFF}, // RGB332 = (0, 1, 1)
+    {0x00, 0x24, 0xAA, 0xFF}, // RGB332 = (0, 1, 2)
+    {0x00, 0x24, 0xFF, 0xFF}, // RGB332 = (0, 1, 3)
+    {0x00, 0x48, 0x00, 0xFF}, // RGB332 = (0, 2, 0)
+    {0x00, 0x48, 0x55, 0xFF}, // RGB332 = (0, 2, 1)
+    {0x00, 0x48, 0xAA, 0xFF}, // RGB332 = (0, 2, 2)
+    {0x00, 0x48, 0xFF, 0xFF}, // RGB332 = (0, 2, 3)
+    {0x00, 0x6C, 0x00, 0xFF}, // RGB332 = (0, 3, 0)
+    {0x00, 0x6C, 0x55, 0xFF}, // RGB332 = (0, 3, 1)
+    {0x00, 0x6C, 0xAA, 0xFF}, // RGB332 = (0, 3, 2)
+    {0x00, 0x6C, 0xFF, 0xFF}, // RGB332 = (0, 3, 3)
+    {0x00, 0x90, 0x00, 0xFF}, // RGB332 = (0, 4, 0)
+    {0x00, 0x90, 0x55, 0xFF}, // RGB332 = (0, 4, 1)
+    {0x00, 0x90, 0xAA, 0xFF}, // RGB332 = (0, 4, 2)
+    {0x00, 0x90, 0xFF, 0xFF}, // RGB332 = (0, 4, 3)
+    {0x00, 0xB4, 0x55, 0xFF}, // RGB332 = (0, 5, 1)
+    {0x00, 0xB4, 0xFF, 0xFF}, // RGB332 = (0, 5, 3)
+    {0x00, 0xD8, 0x00, 0xFF}, // RGB332 = (0, 6, 0)
+    {0x00, 0xD8, 0x55, 0xFF}, // RGB332 = (0, 6, 1)
+    {0x00, 0xD8, 0xAA, 0xFF}, // RGB332 = (0, 6, 2)
+    {0x00, 0xD8, 0xFF, 0xFF}, // RGB332 = (0, 6, 3)
+    {0x00, 0xFC, 0x00, 0xFF}, // RGB332 = (0, 7, 0)
+    {0x00, 0xFC, 0x55, 0xFF}, // RGB332 = (0, 7, 1)
+    {0x00, 0xFC, 0xAA, 0xFF}, // RGB332 = (0, 7, 2)
+    {0x00, 0xFC, 0xFF, 0xFF}, // RGB332 = (0, 7, 3)
+    {0x24, 0x00, 0x00, 0xFF}, // RGB332 = (1, 0, 0)
+    {0x24, 0x00, 0x55, 0xFF}, // RGB332 = (1, 0, 1)
+    {0x24, 0x00, 0xAA, 0xFF}, // RGB332 = (1, 0, 2)
+    {0x24, 0x00, 0xFF, 0xFF}, // RGB332 = (1, 0, 3)
+    {0x24, 0x24, 0x00, 0xFF}, // RGB332 = (1, 1, 0)
+    {0x24, 0x24, 0x55, 0xFF}, // RGB332 = (1, 1, 1)
+    {0x24, 0x24, 0xAA, 0xFF}, // RGB332 = (1, 1, 2)
+    {0x24, 0x24, 0xFF, 0xFF}, // RGB332 = (1, 1, 3)
+    {0x24, 0x48, 0x00, 0xFF}, // RGB332 = (1, 2, 0)
+    {0x24, 0x48, 0x55, 0xFF}, // RGB332 = (1, 2, 1)
+    {0x24, 0x48, 0xAA, 0xFF}, // RGB332 = (1, 2, 2)
+    {0x24, 0x48, 0xFF, 0xFF}, // RGB332 = (1, 2, 3)
+    {0x24, 0x6C, 0x00, 0xFF}, // RGB332 = (1, 3, 0)
+    {0x24, 0x6C, 0x55, 0xFF}, // RGB332 = (1, 3, 1)
+    {0x24, 0x6C, 0xAA, 0xFF}, // RGB332 = (1, 3, 2)
+    {0x24, 0x6C, 0xFF, 0xFF}, // RGB332 = (1, 3, 3)
+    {0x24, 0x90, 0x00, 0xFF}, // RGB332 = (1, 4, 0)
+    {0x24, 0x90, 0x55, 0xFF}, // RGB332 = (1, 4, 1)
+    {0x24, 0x90, 0xAA, 0xFF}, // RGB332 = (1, 4, 2)
+    {0x24, 0x90, 0xFF, 0xFF}, // RGB332 = (1, 4, 3)
+    {0x24, 0xB4, 0x00, 0xFF}, // RGB332 = (1, 5, 0)
+    {0x24, 0xB4, 0x55, 0xFF}, // RGB332 = (1, 5, 1)
+    {0x24, 0xB4, 0xAA, 0xFF}, // RGB332 = (1, 5, 2)
+    {0x24, 0xB4, 0xFF, 0xFF}, // RGB332 = (1, 5, 3)
+    {0x24, 0xD8, 0x00, 0xFF}, // RGB332 = (1, 6, 0)
+    {0x24, 0xD8, 0x55, 0xFF}, // RGB332 = (1, 6, 1)
+    {0x24, 0xD8, 0xAA, 0xFF}, // RGB332 = (1, 6, 2)
+    {0x24, 0xD8, 0xFF, 0xFF}, // RGB332 = (1, 6, 3)
+    {0x24, 0xFC, 0x00, 0xFF}, // RGB332 = (1, 7, 0)
+    {0x24, 0xFC, 0x55, 0xFF}, // RGB332 = (1, 7, 1)
+    {0x24, 0xFC, 0xAA, 0xFF}, // RGB332 = (1, 7, 2)
+    {0x24, 0xFC, 0xFF, 0xFF}, // RGB332 = (1, 7, 3)
+    {0x48, 0x00, 0x00, 0xFF}, // RGB332 = (2, 0, 0)
+    {0x48, 0x00, 0x55, 0xFF}, // RGB332 = (2, 0, 1)
+    {0x48, 0x00, 0xAA, 0xFF}, // RGB332 = (2, 0, 2)
+    {0x48, 0x00, 0xFF, 0xFF}, // RGB332 = (2, 0, 3)
+    {0x48, 0x24, 0x00, 0xFF}, // RGB332 = (2, 1, 0)
+    {0x48, 0x24, 0x55, 0xFF}, // RGB332 = (2, 1, 1)
+    {0x48, 0x24, 0xAA, 0xFF}, // RGB332 = (2, 1, 2)
+    {0x48, 0x24, 0xFF, 0xFF}, // RGB332 = (2, 1, 3)
+    {0x48, 0x48, 0x00, 0xFF}, // RGB332 = (2, 2, 0)
+    {0x48, 0x48, 0xAA, 0xFF}, // RGB332 = (2, 2, 2)
+    {0x48, 0x6C, 0x00, 0xFF}, // RGB332 = (2, 3, 0)
+    {0x48, 0x6C, 0x55, 0xFF}, // RGB332 = (2, 3, 1)
+    {0x48, 0x6C, 0xAA, 0xFF}, // RGB332 = (2, 3, 2)
+    {0x48, 0x6C, 0xFF, 0xFF}, // RGB332 = (2, 3, 3)
+    {0x48, 0x90, 0x00, 0xFF}, // RGB332 = (2, 4, 0)
+    {0x48, 0x90, 0x55, 0xFF}, // RGB332 = (2, 4, 1)
+    {0x48, 0x90, 0xAA, 0xFF}, // RGB332 = (2, 4, 2)
+    {0x48, 0x90, 0xFF, 0xFF}, // RGB332 = (2, 4, 3)
+    {0x48, 0xB4, 0x00, 0xFF}, // RGB332 = (2, 5, 0)
+    {0x48, 0xB4, 0x55, 0xFF}, // RGB332 = (2, 5, 1)
+    {0x48, 0xB4, 0xAA, 0xFF}, // RGB332 = (2, 5, 2)
+    {0x48, 0xB4, 0xFF, 0xFF}, // RGB332 = (2, 5, 3)
+    {0x48, 0xD8, 0x00, 0xFF}, // RGB332 = (2, 6, 0)
+    {0x48, 0xD8, 0x55, 0xFF}, // RGB332 = (2, 6, 1)
+    {0x48, 0xD8, 0xAA, 0xFF}, // RGB332 = (2, 6, 2)
+    {0x48, 0xD8, 0xFF, 0xFF}, // RGB332 = (2, 6, 3)
+    {0x48, 0xFC, 0x00, 0xFF}, // RGB332 = (2, 7, 0)
+    {0x48, 0xFC, 0xAA, 0xFF}, // RGB332 = (2, 7, 2)
+    {0x6C, 0x00, 0x00, 0xFF}, // RGB332 = (3, 0, 0)
+    {0x6C, 0x00, 0x55, 0xFF}, // RGB332 = (3, 0, 1)
+    {0x6C, 0x00, 0xAA, 0xFF}, // RGB332 = (3, 0, 2)
+    {0x6C, 0x00, 0xFF, 0xFF}, // RGB332 = (3, 0, 3)
+    {0x6C, 0x24, 0x00, 0xFF}, // RGB332 = (3, 1, 0)
+    {0x6C, 0x24, 0x55, 0xFF}, // RGB332 = (3, 1, 1)
+    {0x6C, 0x24, 0xAA, 0xFF}, // RGB332 = (3, 1, 2)
+    {0x6C, 0x24, 0xFF, 0xFF}, // RGB332 = (3, 1, 3)
+    {0x6C, 0x48, 0x00, 0xFF}, // RGB332 = (3, 2, 0)
+    {0x6C, 0x48, 0x55, 0xFF}, // RGB332 = (3, 2, 1)
+    {0x6C, 0x48, 0xAA, 0xFF}, // RGB332 = (3, 2, 2)
+    {0x6C, 0x48, 0xFF, 0xFF}, // RGB332 = (3, 2, 3)
+    {0x6C, 0x6C, 0x00, 0xFF}, // RGB332 = (3, 3, 0)
+    {0x6C, 0x6C, 0x55, 0xFF}, // RGB332 = (3, 3, 1)
+    {0x6C, 0x6C, 0xAA, 0xFF}, // RGB332 = (3, 3, 2)
+    {0x6C, 0x6C, 0xFF, 0xFF}, // RGB332 = (3, 3, 3)
+    {0x6C, 0x90, 0x00, 0xFF}, // RGB332 = (3, 4, 0)
+    {0x6C, 0x90, 0x55, 0xFF}, // RGB332 = (3, 4, 1)
+    {0x6C, 0x90, 0xAA, 0xFF}, // RGB332 = (3, 4, 2)
+    {0x6C, 0x90, 0xFF, 0xFF}, // RGB332 = (3, 4, 3)
+    {0x6C, 0xB4, 0x00, 0xFF}, // RGB332 = (3, 5, 0)
+    {0x6C, 0xB4, 0x55, 0xFF}, // RGB332 = (3, 5, 1)
+    {0x6C, 0xB4, 0xAA, 0xFF}, // RGB332 = (3, 5, 2)
+    {0x6C, 0xB4, 0xFF, 0xFF}, // RGB332 = (3, 5, 3)
+    {0x6C, 0xD8, 0x00, 0xFF}, // RGB332 = (3, 6, 0)
+    {0x6C, 0xD8, 0x55, 0xFF}, // RGB332 = (3, 6, 1)
+    {0x6C, 0xD8, 0xAA, 0xFF}, // RGB332 = (3, 6, 2)
+    {0x6C, 0xD8, 0xFF, 0xFF}, // RGB332 = (3, 6, 3)
+    {0x6C, 0xFC, 0x00, 0xFF}, // RGB332 = (3, 7, 0)
+    {0x6C, 0xFC, 0x55, 0xFF}, // RGB332 = (3, 7, 1)
+    {0x6C, 0xFC, 0xAA, 0xFF}, // RGB332 = (3, 7, 2)
+    {0x6C, 0xFC, 0xFF, 0xFF}, // RGB332 = (3, 7, 3)
+    {0x90, 0x00, 0x00, 0xFF}, // RGB332 = (4, 0, 0)
+    {0x90, 0x00, 0x55, 0xFF}, // RGB332 = (4, 0, 1)
+    {0x90, 0x00, 0xAA, 0xFF}, // RGB332 = (4, 0, 2)
+    {0x90, 0x00, 0xFF, 0xFF}, // RGB332 = (4, 0, 3)
+    {0x90, 0x24, 0x00, 0xFF}, // RGB332 = (4, 1, 0)
+    {0x90, 0x24, 0x55, 0xFF}, // RGB332 = (4, 1, 1)
+    {0x90, 0x24, 0xAA, 0xFF}, // RGB332 = (4, 1, 2)
+    {0x90, 0x24, 0xFF, 0xFF}, // RGB332 = (4, 1, 3)
+    {0x90, 0x48, 0x00, 0xFF}, // RGB332 = (4, 2, 0)
+    {0x90, 0x48, 0x55, 0xFF}, // RGB332 = (4, 2, 1)
+    {0x90, 0x48, 0xAA, 0xFF}, // RGB332 = (4, 2, 2)
+    {0x90, 0x48, 0xFF, 0xFF}, // RGB332 = (4, 2, 3)
+    {0x90, 0x6C, 0x00, 0xFF}, // RGB332 = (4, 3, 0)
+    {0x90, 0x6C, 0x55, 0xFF}, // RGB332 = (4, 3, 1)
+    {0x90, 0x6C, 0xAA, 0xFF}, // RGB332 = (4, 3, 2)
+    {0x90, 0x6C, 0xFF, 0xFF}, // RGB332 = (4, 3, 3)
+    {0x90, 0x90, 0x00, 0xFF}, // RGB332 = (4, 4, 0)
+    {0x90, 0x90, 0x55, 0xFF}, // RGB332 = (4, 4, 1)
+    {0x90, 0x90, 0xAA, 0xFF}, // RGB332 = (4, 4, 2)
+    {0x90, 0x90, 0xFF, 0xFF}, // RGB332 = (4, 4, 3)
+    {0x90, 0xB4, 0x00, 0xFF}, // RGB332 = (4, 5, 0)
+    {0x90, 0xB4, 0x55, 0xFF}, // RGB332 = (4, 5, 1)
+    {0x90, 0xB4, 0xAA, 0xFF}, // RGB332 = (4, 5, 2)
+    {0x90, 0xB4, 0xFF, 0xFF}, // RGB332 = (4, 5, 3)
+    {0x90, 0xD8, 0x00, 0xFF}, // RGB332 = (4, 6, 0)
+    {0x90, 0xD8, 0x55, 0xFF}, // RGB332 = (4, 6, 1)
+    {0x90, 0xD8, 0xAA, 0xFF}, // RGB332 = (4, 6, 2)
+    {0x90, 0xD8, 0xFF, 0xFF}, // RGB332 = (4, 6, 3)
+    {0x90, 0xFC, 0x00, 0xFF}, // RGB332 = (4, 7, 0)
+    {0x90, 0xFC, 0x55, 0xFF}, // RGB332 = (4, 7, 1)
+    {0x90, 0xFC, 0xAA, 0xFF}, // RGB332 = (4, 7, 2)
+    {0x90, 0xFC, 0xFF, 0xFF}, // RGB332 = (4, 7, 3)
+    {0xB4, 0x00, 0x55, 0xFF}, // RGB332 = (5, 0, 1)
+    {0xB4, 0x00, 0xFF, 0xFF}, // RGB332 = (5, 0, 3)
+    {0xB4, 0x24, 0x00, 0xFF}, // RGB332 = (5, 1, 0)
+    {0xB4, 0x24, 0x55, 0xFF}, // RGB332 = (5, 1, 1)
+    {0xB4, 0x24, 0xAA, 0xFF}, // RGB332 = (5, 1, 2)
+    {0xB4, 0x24, 0xFF, 0xFF}, // RGB332 = (5, 1, 3)
+    {0xB4, 0x48, 0x55, 0xFF}, // RGB332 = (5, 2, 1)
+    {0xB4, 0x48, 0xAA, 0xFF}, // RGB332 = (5, 2, 2)
+    {0xB4, 0x48, 0xFF, 0xFF}, // RGB332 = (5, 2, 3)
+    {0xB4, 0x6C, 0x00, 0xFF}, // RGB332 = (5, 3, 0)
+    {0xB4, 0x6C, 0x55, 0xFF}, // RGB332 = (5, 3, 1)
+    {0xB4, 0x6C, 0xAA, 0xFF}, // RGB332 = (5, 3, 2)
+    {0xB4, 0x6C, 0xFF, 0xFF}, // RGB332 = (5, 3, 3)
+    {0xB4, 0x90, 0x00, 0xFF}, // RGB332 = (5, 4, 0)
+    {0xB4, 0x90, 0x55, 0xFF}, // RGB332 = (5, 4, 1)
+    {0xB4, 0x90, 0xAA, 0xFF}, // RGB332 = (5, 4, 2)
+    {0xB4, 0x90, 0xFF, 0xFF}, // RGB332 = (5, 4, 3)
+    {0xB4, 0xB4, 0x00, 0xFF}, // RGB332 = (5, 5, 0)
+    {0xB4, 0xB4, 0x55, 0xFF}, // RGB332 = (5, 5, 1)
+    {0xB4, 0xB4, 0xFF, 0xFF}, // RGB332 = (5, 5, 3)
+    {0xB4, 0xD8, 0x00, 0xFF}, // RGB332 = (5, 6, 0)
+    {0xB4, 0xD8, 0x55, 0xFF}, // RGB332 = (5, 6, 1)
+    {0xB4, 0xD8, 0xAA, 0xFF}, // RGB332 = (5, 6, 2)
+    {0xB4, 0xD8, 0xFF, 0xFF}, // RGB332 = (5, 6, 3)
+    {0xB4, 0xFC, 0x00, 0xFF}, // RGB332 = (5, 7, 0)
+    {0xB4, 0xFC, 0x55, 0xFF}, // RGB332 = (5, 7, 1)
+    {0xB4, 0xFC, 0xAA, 0xFF}, // RGB332 = (5, 7, 2)
+    {0xB4, 0xFC, 0xFF, 0xFF}, // RGB332 = (5, 7, 3)
+    {0xD8, 0x00, 0x00, 0xFF}, // RGB332 = (6, 0, 0)
+    {0xD8, 0x00, 0x55, 0xFF}, // RGB332 = (6, 0, 1)
+    {0xD8, 0x00, 0xAA, 0xFF}, // RGB332 = (6, 0, 2)
+    {0xD8, 0x00, 0xFF, 0xFF}, // RGB332 = (6, 0, 3)
+    {0xD8, 0x24, 0x00, 0xFF}, // RGB332 = (6, 1, 0)
+    {0xD8, 0x24, 0x55, 0xFF}, // RGB332 = (6, 1, 1)
+    {0xD8, 0x24, 0xAA, 0xFF}, // RGB332 = (6, 1, 2)
+    {0xD8, 0x24, 0xFF, 0xFF}, // RGB332 = (6, 1, 3)
+    {0xD8, 0x48, 0x00, 0xFF}, // RGB332 = (6, 2, 0)
+    {0xD8, 0x48, 0x55, 0xFF}, // RGB332 = (6, 2, 1)
+    {0xD8, 0x48, 0xAA, 0xFF}, // RGB332 = (6, 2, 2)
+    {0xD8, 0x48, 0xFF, 0xFF}, // RGB332 = (6, 2, 3)
+    {0xD8, 0x6C, 0x00, 0xFF}, // RGB332 = (6, 3, 0)
+    {0xD8, 0x6C, 0x55, 0xFF}, // RGB332 = (6, 3, 1)
+    {0xD8, 0x6C, 0xAA, 0xFF}, // RGB332 = (6, 3, 2)
+    {0xD8, 0x6C, 0xFF, 0xFF}, // RGB332 = (6, 3, 3)
+    {0xD8, 0x90, 0x00, 0xFF}, // RGB332 = (6, 4, 0)
+    {0xD8, 0x90, 0x55, 0xFF}, // RGB332 = (6, 4, 1)
+    {0xD8, 0x90, 0xAA, 0xFF}, // RGB332 = (6, 4, 2)
+    {0xD8, 0x90, 0xFF, 0xFF}, // RGB332 = (6, 4, 3)
+    {0xD8, 0xB4, 0x00, 0xFF}, // RGB332 = (6, 5, 0)
+    {0xD8, 0xB4, 0x55, 0xFF}, // RGB332 = (6, 5, 1)
+    {0xD8, 0xB4, 0xAA, 0xFF}, // RGB332 = (6, 5, 2)
+    {0xD8, 0xB4, 0xFF, 0xFF}, // RGB332 = (6, 5, 3)
+    {0xD8, 0xD8, 0x00, 0xFF}, // RGB332 = (6, 6, 0)
+    {0xD8, 0xD8, 0x55, 0xFF}, // RGB332 = (6, 6, 1)
+    {0xD8, 0xD8, 0xAA, 0xFF}, // RGB332 = (6, 6, 2)
+    {0xD8, 0xD8, 0xFF, 0xFF}, // RGB332 = (6, 6, 3)
+    {0xD8, 0xFC, 0x00, 0xFF}, // RGB332 = (6, 7, 0)
+    {0xD8, 0xFC, 0x55, 0xFF}, // RGB332 = (6, 7, 1)
+    {0xD8, 0xFC, 0xAA, 0xFF}, // RGB332 = (6, 7, 2)
+    {0xD8, 0xFC, 0xFF, 0xFF}, // RGB332 = (6, 7, 3)
+    {0xFC, 0x00, 0x00, 0xFF}, // RGB332 = (7, 0, 0)
+    {0xFC, 0x00, 0x55, 0xFF}, // RGB332 = (7, 0, 1)
+    {0xFC, 0x00, 0xAA, 0xFF}, // RGB332 = (7, 0, 2)
+    {0xFC, 0x00, 0xFF, 0xFF}, // RGB332 = (7, 0, 3)
+    {0xFC, 0x24, 0x00, 0xFF}, // RGB332 = (7, 1, 0)
+    {0xFC, 0x24, 0x55, 0xFF}, // RGB332 = (7, 1, 1)
+    {0xFC, 0x24, 0xAA, 0xFF}, // RGB332 = (7, 1, 2)
+    {0xFC, 0x24, 0xFF, 0xFF}, // RGB332 = (7, 1, 3)
+    {0xFC, 0x48, 0x00, 0xFF}, // RGB332 = (7, 2, 0)
+    {0xFC, 0x48, 0xAA, 0xFF}, // RGB332 = (7, 2, 2)
+    {0xFC, 0x6C, 0x00, 0xFF}, // RGB332 = (7, 3, 0)
+    {0xFC, 0x6C, 0x55, 0xFF}, // RGB332 = (7, 3, 1)
+    {0xFC, 0x6C, 0xAA, 0xFF}, // RGB332 = (7, 3, 2)
+    {0xFC, 0x6C, 0xFF, 0xFF}, // RGB332 = (7, 3, 3)
+    {0xFC, 0x90, 0x00, 0xFF}, // RGB332 = (7, 4, 0)
+    {0xFC, 0x90, 0x55, 0xFF}, // RGB332 = (7, 4, 1)
+    {0xFC, 0x90, 0xAA, 0xFF}, // RGB332 = (7, 4, 2)
+    {0xFC, 0x90, 0xFF, 0xFF}, // RGB332 = (7, 4, 3)
+    {0xFC, 0xB4, 0x00, 0xFF}, // RGB332 = (7, 5, 0)
+    {0xFC, 0xB4, 0x55, 0xFF}, // RGB332 = (7, 5, 1)
+    {0xFC, 0xB4, 0xAA, 0xFF}, // RGB332 = (7, 5, 2)
+    {0xFC, 0xB4, 0xFF, 0xFF}, // RGB332 = (7, 5, 3)
+    {0xFC, 0xD8, 0x00, 0xFF}, // RGB332 = (7, 6, 0)
+    {0xFC, 0xD8, 0x55, 0xFF}, // RGB332 = (7, 6, 1)
+    {0xFC, 0xD8, 0xAA, 0xFF}, // RGB332 = (7, 6, 2)
+    {0xFC, 0xD8, 0xFF, 0xFF}, // RGB332 = (7, 6, 3)
+    {0xFC, 0xFC, 0x00, 0xFF}, // RGB332 = (7, 7, 0)
+    {0xFC, 0xFC, 0xAA, 0xFF}, // RGB332 = (7, 7, 2)
   };
 
 grub_err_t
@@ -72,7 +331,6 @@ grub_video_fb_init (void)
 {
   grub_free (framebuffer.palette);
   framebuffer.render_target = 0;
-  framebuffer.front_target = 0;
   framebuffer.back_target = 0;
   framebuffer.palette = 0;
   framebuffer.palette_size = 0;
@@ -88,7 +346,6 @@ grub_video_fb_fini (void)
   grub_free (framebuffer.offscreen_buffer);
   grub_free (framebuffer.palette);
   framebuffer.render_target = 0;
-  framebuffer.front_target = 0;
   framebuffer.back_target = 0;
   framebuffer.palette = 0;
   framebuffer.palette_size = 0;
@@ -142,12 +399,67 @@ grub_video_fb_set_palette (unsigned int start, unsigned int count,
   return GRUB_ERR_NONE;
 }
 
+static grub_err_t
+grub_video_fb_set_area (void)
+{
+  unsigned int viewport_x1 = framebuffer.render_target->viewport.x;
+  unsigned int viewport_y1 = framebuffer.render_target->viewport.y;
+  unsigned int viewport_width = framebuffer.render_target->viewport.width;
+  unsigned int viewport_height = framebuffer.render_target->viewport.height;
+  unsigned int viewport_x2 = viewport_x1 + viewport_width;
+  unsigned int viewport_y2 = viewport_y1 + viewport_height;
+
+  unsigned int region_x1 = framebuffer.render_target->region.x;
+  unsigned int region_y1 = framebuffer.render_target->region.y;
+  unsigned int region_width = framebuffer.render_target->region.width;
+  unsigned int region_height = framebuffer.render_target->region.height;
+  unsigned int region_x2 = region_x1 + region_width;
+  unsigned int region_y2 = region_y1 + region_height;
+
+  unsigned int max_x1 = grub_max (viewport_x1, region_x1);
+  unsigned int min_x2 = grub_min (viewport_x2, region_x2);
+  unsigned int max_y1 = grub_max (viewport_y1, region_y1);
+  unsigned int min_y2 = grub_min (viewport_y2, region_y2);
+
+  /* Viewport and region do not intersect. */
+  if (viewport_width == 0 || viewport_height == 0 || region_width == 0
+      || region_height == 0 || max_x1 >= min_x2 || max_y1 >= min_y2)
+    {
+      framebuffer.render_target->area.x = 0;
+      framebuffer.render_target->area.y = 0;
+      framebuffer.render_target->area.width = 0;
+      framebuffer.render_target->area.height = 0;
+      framebuffer.render_target->area_offset_x = 0;
+      framebuffer.render_target->area_offset_y = 0;
+      return GRUB_ERR_NONE;
+    }
+
+  /* There is non-zero intersection. */
+  framebuffer.render_target->area.x = max_x1;
+  framebuffer.render_target->area.y = max_y1;
+  framebuffer.render_target->area.width = min_x2 - max_x1;
+  framebuffer.render_target->area.height = min_y2 - max_y1;
+
+  if (region_x1 > viewport_x1)
+    framebuffer.render_target->area_offset_x = (int)region_x1
+                                               - (int)viewport_x1;
+  else
+    framebuffer.render_target->area_offset_x = 0;
+  if (region_y1 > viewport_y1)
+    framebuffer.render_target->area_offset_y = (int)region_y1
+                                               - (int)viewport_y1;
+  else
+    framebuffer.render_target->area_offset_y = 0;
+
+  return GRUB_ERR_NONE;
+}
+
 grub_err_t
 grub_video_fb_set_viewport (unsigned int x, unsigned int y,
 			    unsigned int width, unsigned int height)
 {
-  /* Make sure viewport is withing screen dimensions.  If viewport was set
-     to be out of the region, mark its size as zero.  */
+  /* Make sure viewport is within screen dimensions.  If viewport was set
+     to be out of the screen, mark its size as zero.  */
   if (x > framebuffer.render_target->mode_info.width)
     {
       x = 0;
@@ -171,6 +483,10 @@ grub_video_fb_set_viewport (unsigned int x, unsigned int y,
   framebuffer.render_target->viewport.width = width;
   framebuffer.render_target->viewport.height = height;
 
+  /* Count drawing area only if needed. */
+  if (framebuffer.render_target->area_enabled)
+    grub_video_fb_set_area ();
+
   return GRUB_ERR_NONE;
 }
 
@@ -182,6 +498,78 @@ grub_video_fb_get_viewport (unsigned int *x, unsigned int *y,
   if (y) *y = framebuffer.render_target->viewport.y;
   if (width) *width = framebuffer.render_target->viewport.width;
   if (height) *height = framebuffer.render_target->viewport.height;
+
+  return GRUB_ERR_NONE;
+}
+
+grub_err_t
+grub_video_fb_set_region (unsigned int x, unsigned int y,
+                          unsigned int width, unsigned int height)
+{
+  /* Make sure region is within screen dimensions.  If region was set
+     to be out of the screen, mark its size as zero.  */
+  if (x > framebuffer.render_target->mode_info.width)
+    {
+      x = 0;
+      width = 0;
+    }
+
+  if (y > framebuffer.render_target->mode_info.height)
+    {
+      y = 0;
+      height = 0;
+    }
+
+  if (x + width > framebuffer.render_target->mode_info.width)
+    width = framebuffer.render_target->mode_info.width - x;
+
+  if (y + height > framebuffer.render_target->mode_info.height)
+    height = framebuffer.render_target->mode_info.height - y;
+
+  framebuffer.render_target->region.x = x;
+  framebuffer.render_target->region.y = y;
+  framebuffer.render_target->region.width = width;
+  framebuffer.render_target->region.height = height;
+
+  /* If we have called set_region then area is needed.  */
+  grub_video_fb_set_area ();
+
+  return GRUB_ERR_NONE;
+}
+
+grub_err_t
+grub_video_fb_get_region (unsigned int *x, unsigned int *y,
+                          unsigned int *width, unsigned int *height)
+{
+  if (x) *x = framebuffer.render_target->region.x;
+  if (y) *y = framebuffer.render_target->region.y;
+  if (width) *width = framebuffer.render_target->region.width;
+  if (height) *height = framebuffer.render_target->region.height;
+
+  return GRUB_ERR_NONE;
+}
+
+grub_err_t
+grub_video_fb_set_area_status (grub_video_area_status_t area_status)
+{
+  if (area_status == GRUB_VIDEO_AREA_ENABLED)
+    framebuffer.render_target->area_enabled = 1;
+  else
+    framebuffer.render_target->area_enabled = 0;
+
+  return GRUB_ERR_NONE;
+}
+
+grub_err_t
+grub_video_fb_get_area_status (grub_video_area_status_t *area_status)
+{
+  if (!area_status)
+    return GRUB_ERR_NONE;
+
+  if (framebuffer.render_target->area_enabled)
+    *area_status = GRUB_VIDEO_AREA_ENABLED;
+  else
+    *area_status = GRUB_VIDEO_AREA_DISABLED;
 
   return GRUB_ERR_NONE;
 }
@@ -285,11 +673,18 @@ grub_video_color_t
 grub_video_fb_map_rgba (grub_uint8_t red, grub_uint8_t green,
 			grub_uint8_t blue, grub_uint8_t alpha)
 {
+
   if ((framebuffer.render_target->mode_info.mode_type
        & GRUB_VIDEO_MODE_TYPE_INDEX_COLOR) != 0)
-    /* No alpha available in index color modes, just use
-       same value as in only RGB modes.  */
-    return grub_video_fb_map_rgb (red, green, blue);
+    {
+      if ((framebuffer.render_target->mode_info.mode_type
+	   & GRUB_VIDEO_MODE_TYPE_ALPHA) != 0
+	  && alpha == 0)
+	return 0xf0;
+      /* No alpha available in index color modes, just use
+	 same value as in only RGB modes.  */
+      return grub_video_fb_map_rgb (red, green, blue);
+    }
   else if ((framebuffer.render_target->mode_info.mode_type
             & GRUB_VIDEO_MODE_TYPE_1BIT_BITMAP) != 0)
     {
@@ -348,6 +743,17 @@ grub_video_fb_unmap_color_int (struct grub_video_fbblit_info * source,
   if ((mode_info->mode_type
        & GRUB_VIDEO_MODE_TYPE_INDEX_COLOR) != 0)
     {
+      if ((framebuffer.render_target->mode_info.mode_type
+	   & GRUB_VIDEO_MODE_TYPE_ALPHA) != 0
+	  && color == 0xf0)
+        {
+          *red = 0;
+          *green = 0;
+          *blue = 0;
+          *alpha = 0;
+          return;
+        }
+	
       /* If we have an out-of-bounds color, return transparent black.  */
       if (color > 255)
         {
@@ -423,19 +829,52 @@ grub_video_fb_unmap_color_int (struct grub_video_fbblit_info * source,
     }
 }
 
+static void
+dirty (int y, int height)
+{
+  if (framebuffer.render_target != framebuffer.back_target)
+    return;
+  if (framebuffer.current_dirty.first_line > y)
+    framebuffer.current_dirty.first_line = y;
+  if (framebuffer.current_dirty.last_line < y + height)
+    framebuffer.current_dirty.last_line = y + height;
+}
+
 grub_err_t
 grub_video_fb_fill_rect (grub_video_color_t color, int x, int y,
 			 unsigned int width, unsigned int height)
 {
   struct grub_video_fbblit_info target;
+  unsigned int area_x;
+  unsigned int area_y;
+  unsigned int area_width;
+  unsigned int area_height;
+  if (framebuffer.render_target->area_enabled)
+    {
+      area_x = framebuffer.render_target->area.x;
+      area_y = framebuffer.render_target->area.y;
+      area_width = framebuffer.render_target->area.width;
+      area_height = framebuffer.render_target->area.height;
+      x -= framebuffer.render_target->area_offset_x;
+      y -= framebuffer.render_target->area_offset_y;
+    }
+  else
+    {
+      area_x = framebuffer.render_target->viewport.x;
+      area_y = framebuffer.render_target->viewport.y;
+      area_width = framebuffer.render_target->viewport.width;
+      area_height = framebuffer.render_target->viewport.height;
+    }
 
   /* Make sure there is something to do.  */
-  if ((x >= (int)framebuffer.render_target->viewport.width) || (x + (int)width < 0))
+  if ((area_width == 0) || (area_height == 0))
     return GRUB_ERR_NONE;
-  if ((y >= (int)framebuffer.render_target->viewport.height) || (y + (int)height < 0))
+  if ((x >= (int)area_width) || (x + (int)width < 0))
+    return GRUB_ERR_NONE;
+  if ((y >= (int)area_height) || (y + (int)height < 0))
     return GRUB_ERR_NONE;
 
-  /* Do not allow drawing out of viewport.  */
+  /* Do not allow drawing out of area.  */
   if (x < 0)
     {
       width += x;
@@ -447,512 +886,161 @@ grub_video_fb_fill_rect (grub_video_color_t color, int x, int y,
       y = 0;
     }
 
-  if ((x + width) > framebuffer.render_target->viewport.width)
-    width = framebuffer.render_target->viewport.width - x;
-  if ((y + height) > framebuffer.render_target->viewport.height)
-    height = framebuffer.render_target->viewport.height - y;
+  if ((x + width) > area_width)
+    width = area_width - x;
+  if ((y + height) > area_height)
+    height = area_height - y;
 
-  /* Add viewport offset.  */
-  x += framebuffer.render_target->viewport.x;
-  y += framebuffer.render_target->viewport.y;
+  /* Add area offset.  */
+  x += area_x;
+  y += area_y;
+
+  dirty (y, height);
 
   /* Use fbblit_info to encapsulate rendering.  */
   target.mode_info = &framebuffer.render_target->mode_info;
   target.data = framebuffer.render_target->data;
 
-  /* Try to figure out more optimized version.  Note that color is already
-     mapped to target format so we can make assumptions based on that.  */
-  if (target.mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_BGRA_8888)
-    {
-      grub_video_fbfill_direct32 (&target, color, x, y,
-                                        width, height);
-      return GRUB_ERR_NONE;
-    }
-  else if (target.mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGBA_8888)
-    {
-      grub_video_fbfill_direct32 (&target, color, x, y,
-                                        width, height);
-      return GRUB_ERR_NONE;
-    }
-  else if (target.mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGB_888)
-    {
-      grub_video_fbfill_direct24 (&target, color, x, y,
-                                        width, height);
-      return GRUB_ERR_NONE;
-    }
-  else if (target.mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGB_565)
-    {
-      grub_video_fbfill_direct16 (&target, color, x, y,
-                                        width, height);
-      return GRUB_ERR_NONE;
-    }
-  else if (target.mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_BGR_565)
-    {
-      grub_video_fbfill_direct16 (&target, color, x, y,
-                                        width, height);
-      return GRUB_ERR_NONE;
-    }
-  else if (target.mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR)
-    {
-      grub_video_fbfill_direct8 (&target, color, x, y,
-				       width, height);
-      return GRUB_ERR_NONE;
-    }
-
-  /* No optimized version found, use default (slow) filler.  */
-  grub_video_fbfill (&target, color, x, y, width, height);
-
+  grub_video_fb_fill_dispatch (&target, color, x, y,
+			       width, height);
   return GRUB_ERR_NONE;
 }
 
-/* NOTE: This function assumes that given coordinates are within bounds of
-   handled data.  */
-static void
-common_blitter (struct grub_video_fbblit_info *target,
-                struct grub_video_fbblit_info *source,
-                enum grub_video_blit_operators oper, int x, int y,
-                unsigned int width, unsigned int height,
-                int offset_x, int offset_y)
+static inline grub_err_t __attribute__ ((always_inline))
+grub_video_fb_blit_source (struct grub_video_fbblit_info *source,
+                           enum grub_video_blit_operators oper, int x, int y,
+                           int offset_x, int offset_y,
+                           unsigned int width, unsigned int height)
 {
-  if (oper == GRUB_VIDEO_BLIT_REPLACE)
+  struct grub_video_fbblit_info target;
+  unsigned int area_x;
+  unsigned int area_y;
+  unsigned int area_width;
+  unsigned int area_height;
+  if (framebuffer.render_target->area_enabled)
     {
-      /* Try to figure out more optimized version for replace operator.  */
-      if (source->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGBA_8888)
-	{
-	  if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGBA_8888)
-	    {
-	      grub_video_fbblit_replace_directN (target, source,
-						       x, y, width, height,
-						       offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_BGRA_8888)
-	    {
-	      grub_video_fbblit_replace_BGRX8888_RGBX8888 (target, source,
-								 x, y, width, height,
-								 offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_BGR_888)
-	    {
-	      grub_video_fbblit_replace_BGR888_RGBX8888 (target, source,
-							       x, y, width, height,
-							       offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGB_888)
-	    {
-	      grub_video_fbblit_replace_RGB888_RGBX8888 (target, source,
-							       x, y, width, height,
-							       offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR)
-	    {
-	      grub_video_fbblit_replace_index_RGBX8888 (target, source,
-							      x, y, width, height,
-							      offset_x, offset_y);
-	      return;
-	    }
-	}
-      else if (source->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGB_888)
-	{
-	  if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_BGRA_8888)
-	    {
-	      grub_video_fbblit_replace_BGRX8888_RGB888 (target, source,
-							       x, y, width, height,
-							       offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGBA_8888)
-	    {
-	      grub_video_fbblit_replace_RGBX8888_RGB888 (target, source,
-							       x, y, width, height,
-							       offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_BGR_888)
-	    {
-	      grub_video_fbblit_replace_BGR888_RGB888 (target, source,
-							     x, y, width, height,
-							     offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGB_888)
-	    {
-	      grub_video_fbblit_replace_directN (target, source,
-						       x, y, width, height,
-						       offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR)
-	    {
-	      grub_video_fbblit_replace_index_RGB888 (target, source,
-							    x, y, width, height,
-							    offset_x, offset_y);
-	      return;
-	    }
-	}
-      else if (source->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_BGRA_8888)
-	{
-	  if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_BGRA_8888)
-	    {
-	      grub_video_fbblit_replace_directN (target, source,
-						       x, y, width, height,
-						       offset_x, offset_y);
-	      return;
-	    }
-	}
-      else if (source->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR)
-	{
-	  if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR)
-	    {
-	      grub_video_fbblit_replace_directN (target, source,
-						       x, y, width, height,
-						       offset_x, offset_y);
-	      return;
-	    }
-	}
-      else if (source->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_1BIT_PACKED)
-	{
-	  if (target->mode_info->bpp == 32)
-	    {
-	      grub_video_fbblit_replace_32bit_1bit (target, source,
-						    x, y, width, height,
-						    offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->bpp == 24)
-	    {
-	      grub_video_fbblit_replace_24bit_1bit (target, source,
-						    x, y, width, height,
-						    offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->bpp == 16)
-	    {
-	      grub_video_fbblit_replace_16bit_1bit (target, source,
-						    x, y, width, height,
-						    offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->bpp == 8)
-	    {
-	      grub_video_fbblit_replace_8bit_1bit (target, source,
-						   x, y, width, height,
-						   offset_x, offset_y);
-	      return;
-	    }
-	}
-
-      /* No optimized replace operator found, use default (slow) blitter.  */
-      grub_video_fbblit_replace (target, source, x, y, width, height,
-				       offset_x, offset_y);
+      area_x = framebuffer.render_target->area.x;
+      area_y = framebuffer.render_target->area.y;
+      area_width = framebuffer.render_target->area.width;
+      area_height = framebuffer.render_target->area.height;
+      x -= framebuffer.render_target->area_offset_x;
+      y -= framebuffer.render_target->area_offset_y;
     }
   else
     {
-      /* Try to figure out more optimized blend operator.  */
-      if (source->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGBA_8888)
-	{
-	  if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_BGRA_8888)
-	    {
-	      grub_video_fbblit_blend_BGRA8888_RGBA8888 (target, source,
-							       x, y, width, height,
-							       offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGBA_8888)
-	    {
-	      grub_video_fbblit_blend_RGBA8888_RGBA8888 (target, source,
-							       x, y, width, height,
-							       offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_BGR_888)
-	    {
-	      grub_video_fbblit_blend_BGR888_RGBA8888 (target, source,
-							     x, y, width, height,
-							     offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGB_888)
-	    {
-	      grub_video_fbblit_blend_RGB888_RGBA8888 (target, source,
-							     x, y, width, height,
-							     offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR)
-	    {
-	      grub_video_fbblit_blend_index_RGBA8888 (target, source,
-							    x, y, width, height,
-							    offset_x, offset_y);
-	      return;
-	    }
-	}
-      else if (source->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGB_888)
-	{
-	  /* Note: There is really no alpha information here, so blend is
-	     changed to replace.  */
-
-	  if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_BGRA_8888)
-	    {
-	      grub_video_fbblit_replace_BGRX8888_RGB888 (target, source,
-							       x, y, width, height,
-							       offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGBA_8888)
-	    {
-	      grub_video_fbblit_replace_RGBX8888_RGB888 (target, source,
-							       x, y, width, height,
-							       offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_BGR_888)
-	    {
-	      grub_video_fbblit_replace_BGR888_RGB888 (target, source,
-							     x, y, width, height,
-							     offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_RGB_888)
-	    {
-	      grub_video_fbblit_replace_directN (target, source,
-						       x, y, width, height,
-						       offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR)
-	    {
-	      grub_video_fbblit_replace_index_RGB888 (target, source,
-							    x, y, width, height,
-							    offset_x, offset_y);
-	      return;
-	    }
-	}
-      else if (source->mode_info->blit_format == GRUB_VIDEO_BLIT_FORMAT_1BIT_PACKED)
-	{
-	  if (target->mode_info->blit_format
-	      == GRUB_VIDEO_BLIT_FORMAT_BGRA_8888
-	      || target->mode_info->blit_format
-	      == GRUB_VIDEO_BLIT_FORMAT_RGBA_8888)
-	    {
-	      grub_video_fbblit_blend_XXXA8888_1bit (target, source,
-						     x, y, width, height,
-						     offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format
-		   == GRUB_VIDEO_BLIT_FORMAT_BGR_888
-		   || target->mode_info->blit_format
-		   == GRUB_VIDEO_BLIT_FORMAT_RGB_888)
-	    {
-	      grub_video_fbblit_blend_XXX888_1bit (target, source,
-						   x, y, width, height,
-						   offset_x, offset_y);
-	      return;
-	    }
-	  else if (target->mode_info->blit_format
-		   == GRUB_VIDEO_BLIT_FORMAT_BGR_565
-		   || target->mode_info->blit_format
-		   == GRUB_VIDEO_BLIT_FORMAT_RGB_565)
-	    {
-	      grub_video_fbblit_blend_XXX565_1bit (target, source,
-						   x, y, width, height,
-						   offset_x, offset_y);
-	      return;
-	    }
-
-	}
-
-
-      /* No optimized blend operation found, use default (slow) blitter.  */
-      grub_video_fbblit_blend (target, source, x, y, width, height,
-				     offset_x, offset_y);
+      area_x = framebuffer.render_target->viewport.x;
+      area_y = framebuffer.render_target->viewport.y;
+      area_width = framebuffer.render_target->viewport.width;
+      area_height = framebuffer.render_target->viewport.height;
     }
+
+  /* Make sure there is something to do.  */
+  if ((area_width == 0) || (area_height == 0) || (width == 0) || (height == 0))
+    return GRUB_ERR_NONE;
+  if ((x >= (int)area_width) || (x + (int)width < 0))
+    return GRUB_ERR_NONE;
+  if ((y >= (int)area_height) || (y + (int)height < 0))
+    return GRUB_ERR_NONE;
+  if ((x + (int)source->mode_info->width) < 0)
+    return GRUB_ERR_NONE;
+  if ((y + (int)source->mode_info->height) < 0)
+    return GRUB_ERR_NONE;
+  if ((offset_x >= (int)source->mode_info->width)
+      || (offset_x + (int)width < 0))
+    return GRUB_ERR_NONE;
+  if ((offset_y >= (int)source->mode_info->height)
+      || (offset_y + (int)height < 0))
+    return GRUB_ERR_NONE;
+
+  /* If we have negative coordinates, optimize drawing to minimum.  */
+  if (offset_x < 0)
+    {
+      width += offset_x;
+      x -= offset_x;
+      offset_x = 0;
+    }
+
+  if (offset_y < 0)
+    {
+      height += offset_y;
+      y -= offset_y;
+      offset_y = 0;
+    }
+
+  if (x < 0)
+    {
+      width += x;
+      offset_x -= x;
+      x = 0;
+    }
+
+  if (y < 0)
+    {
+      height += y;
+      offset_y -= y;
+      y = 0;
+    }
+
+  /* Do not allow drawing out of area.  */
+  if ((x + width) > area_width)
+    width = area_width - x;
+  if ((y + height) > area_height)
+    height = area_height - y;
+
+  if ((offset_x + width) > source->mode_info->width)
+    width = source->mode_info->width - offset_x;
+  if ((offset_y + height) > source->mode_info->height)
+    height = source->mode_info->height - offset_y;
+
+  /* Limit drawing to source render target dimensions.  */
+  if (width > source->mode_info->width)
+    width = source->mode_info->width;
+
+  if (height > source->mode_info->height)
+    height = source->mode_info->height;
+
+  /* Add viewport offset.  */
+  x += area_x;
+  y += area_y;
+
+  /* Use fbblit_info to encapsulate rendering.  */
+  target.mode_info = &framebuffer.render_target->mode_info;
+  target.data = framebuffer.render_target->data;
+
+  /* Do actual blitting.  */
+  dirty (y, height);
+  grub_video_fb_dispatch_blit (&target, source, oper, x, y, width, height,
+                               offset_x, offset_y);
+
+  return GRUB_ERR_NONE;
 }
 
 grub_err_t
 grub_video_fb_blit_bitmap (struct grub_video_bitmap *bitmap,
-			   enum grub_video_blit_operators oper, int x, int y,
-			   int offset_x, int offset_y,
-			   unsigned int width, unsigned int height)
+                           enum grub_video_blit_operators oper, int x, int y,
+                           int offset_x, int offset_y,
+                           unsigned int width, unsigned int height)
 {
-  struct grub_video_fbblit_info source;
-  struct grub_video_fbblit_info target;
+  struct grub_video_fbblit_info source_info;
+  source_info.mode_info = &bitmap->mode_info;
+  source_info.data = bitmap->data;
 
-  /* Make sure there is something to do.  */
-  if ((width == 0) || (height == 0))
-    return GRUB_ERR_NONE;
-  if ((x >= (int)framebuffer.render_target->viewport.width) || (x + (int)width < 0))
-    return GRUB_ERR_NONE;
-  if ((y >= (int)framebuffer.render_target->viewport.height) || (y + (int)height < 0))
-    return GRUB_ERR_NONE;
-  if ((x + (int)bitmap->mode_info.width) < 0)
-    return GRUB_ERR_NONE;
-  if ((y + (int)bitmap->mode_info.height) < 0)
-    return GRUB_ERR_NONE;
-  if ((offset_x >= (int)bitmap->mode_info.width)
-      || (offset_x + (int)width < 0))
-    return GRUB_ERR_NONE;
-  if ((offset_y >= (int)bitmap->mode_info.height)
-      || (offset_y + (int)height < 0))
-    return GRUB_ERR_NONE;
-
-  /* If we have negative coordinates, optimize drawing to minimum.  */
-  if (offset_x < 0)
-    {
-      width += offset_x;
-      x -= offset_x;
-      offset_x = 0;
-    }
-
-  if (offset_y < 0)
-    {
-      height += offset_y;
-      y -= offset_y;
-      offset_y = 0;
-    }
-
-  if (x < 0)
-    {
-      width += x;
-      offset_x -= x;
-      x = 0;
-    }
-
-  if (y < 0)
-    {
-      height += y;
-      offset_y -= y;
-      y = 0;
-    }
-
-  /* Do not allow drawing out of viewport.  */
-  if ((x + width) > framebuffer.render_target->viewport.width)
-    width = framebuffer.render_target->viewport.width - x;
-  if ((y + height) > framebuffer.render_target->viewport.height)
-    height = framebuffer.render_target->viewport.height - y;
-
-  if ((offset_x + width) > bitmap->mode_info.width)
-    width = bitmap->mode_info.width - offset_x;
-  if ((offset_y + height) > bitmap->mode_info.height)
-    height = bitmap->mode_info.height - offset_y;
-
-  /* Limit drawing to source render target dimensions.  */
-  if (width > bitmap->mode_info.width)
-    width = bitmap->mode_info.width;
-
-  if (height > bitmap->mode_info.height)
-    height = bitmap->mode_info.height;
-
-  /* Add viewport offset.  */
-  x += framebuffer.render_target->viewport.x;
-  y += framebuffer.render_target->viewport.y;
-
-  /* Use fbblit_info to encapsulate rendering.  */
-  source.mode_info = &bitmap->mode_info;
-  source.data = bitmap->data;
-  target.mode_info = &framebuffer.render_target->mode_info;
-  target.data = framebuffer.render_target->data;
-
-  /* Do actual blitting.  */
-  common_blitter (&target, &source, oper, x, y, width, height,
-                  offset_x, offset_y);
-
-  return GRUB_ERR_NONE;
+  return grub_video_fb_blit_source (&source_info, oper, x, y,
+                                    offset_x, offset_y, width, height);
 }
 
 grub_err_t
 grub_video_fb_blit_render_target (struct grub_video_fbrender_target *source,
-                                   enum grub_video_blit_operators oper,
-                                   int x, int y, int offset_x, int offset_y,
-                                   unsigned int width, unsigned int height)
+                                  enum grub_video_blit_operators oper,
+                                  int x, int y, int offset_x, int offset_y,
+                                  unsigned int width, unsigned int height)
 {
   struct grub_video_fbblit_info source_info;
-  struct grub_video_fbblit_info target_info;
-
-  /* Make sure there is something to do.  */
-  if ((width == 0) || (height == 0))
-    return GRUB_ERR_NONE;
-  if ((x >= (int)framebuffer.render_target->viewport.width) || (x + (int)width < 0))
-    return GRUB_ERR_NONE;
-  if ((y >= (int)framebuffer.render_target->viewport.height) || (y + (int)height < 0))
-    return GRUB_ERR_NONE;
-  if ((x + (int)source->mode_info.width) < 0)
-    return GRUB_ERR_NONE;
-  if ((y + (int)source->mode_info.height) < 0)
-    return GRUB_ERR_NONE;
-  if ((offset_x >= (int)source->mode_info.width)
-      || (offset_x + (int)width < 0))
-    return GRUB_ERR_NONE;
-  if ((offset_y >= (int)source->mode_info.height)
-      || (offset_y + (int)height < 0))
-    return GRUB_ERR_NONE;
-
-  /* If we have negative coordinates, optimize drawing to minimum.  */
-  if (offset_x < 0)
-    {
-      width += offset_x;
-      x -= offset_x;
-      offset_x = 0;
-    }
-
-  if (offset_y < 0)
-    {
-      height += offset_y;
-      y -= offset_y;
-      offset_y = 0;
-    }
-
-  if (x < 0)
-    {
-      width += x;
-      offset_x -= x;
-      x = 0;
-    }
-
-  if (y < 0)
-    {
-      height += y;
-      offset_y -= y;
-      y = 0;
-    }
-
-  /* Do not allow drawing out of viewport.  */
-  if ((x + width) > framebuffer.render_target->viewport.width)
-    width = framebuffer.render_target->viewport.width - x;
-  if ((y + height) > framebuffer.render_target->viewport.height)
-    height = framebuffer.render_target->viewport.height - y;
-
-  if ((offset_x + width) > source->mode_info.width)
-    width = source->mode_info.width - offset_x;
-  if ((offset_y + height) > source->mode_info.height)
-    height = source->mode_info.height - offset_y;
-
-  /* Limit drawing to source render target dimensions.  */
-  if (width > source->mode_info.width)
-    width = source->mode_info.width;
-
-  if (height > source->mode_info.height)
-    height = source->mode_info.height;
-
-  /* Add viewport offset.  */
-  x += framebuffer.render_target->viewport.x;
-  y += framebuffer.render_target->viewport.y;
-
-  /* Use fbblit_info to encapsulate rendering.  */
   source_info.mode_info = &source->mode_info;
   source_info.data = source->data;
-  target_info.mode_info = &framebuffer.render_target->mode_info;
-  target_info.data = framebuffer.render_target->data;
 
-  /* Do actual blitting.  */
-  common_blitter (&target_info, &source_info, oper, x, y, width, height,
-                  offset_x, offset_y);
-
-  return GRUB_ERR_NONE;
+  return grub_video_fb_blit_source (&source_info, oper, x, y,
+                                    offset_x, offset_y, width, height);
 }
 
 grub_err_t
@@ -971,6 +1059,9 @@ grub_video_fb_scroll (grub_video_color_t color, int dx, int dy)
 
   width = framebuffer.render_target->viewport.width - grub_abs (dx);
   height = framebuffer.render_target->viewport.height - grub_abs (dy);
+
+  dirty (framebuffer.render_target->viewport.y,
+	 framebuffer.render_target->viewport.height);
 
   if (dx < 0)
     {
@@ -1126,7 +1217,7 @@ grub_video_fb_create_render_target (struct grub_video_fbrender_target **result,
   if ((! result)
       || (width == 0)
       || (height == 0))
-    return grub_error (GRUB_ERR_BAD_ARGUMENT,
+    return grub_error (GRUB_ERR_BUG,
                        "invalid argument given");
 
   /* Allocate memory for render target.  */
@@ -1140,31 +1231,57 @@ grub_video_fb_create_render_target (struct grub_video_fbrender_target **result,
   /* Mark render target as allocated.  */
   target->is_allocated = 1;
 
-  /* Maximize viewport.  */
+  /* Maximize viewport, region and area.  */
   target->viewport.x = 0;
   target->viewport.y = 0;
   target->viewport.width = width;
   target->viewport.height = height;
 
+  target->region.x = 0;
+  target->region.y = 0;
+  target->region.width = width;
+  target->region.height = height;
+
+  target->area_enabled = 0;
+  target->area.x = 0;
+  target->area.y = 0;
+  target->area.width = width;
+  target->area.height = height;
+  target->area_offset_x = 0;
+  target->area_offset_y = 0;
+
   /* Setup render target format.  */
   target->mode_info.width = width;
   target->mode_info.height = height;
-  target->mode_info.mode_type = GRUB_VIDEO_MODE_TYPE_RGB
-                                | GRUB_VIDEO_MODE_TYPE_ALPHA;
-  target->mode_info.bpp = 32;
-  target->mode_info.bytes_per_pixel = 4;
+  switch (mode_type)
+    {
+    case GRUB_VIDEO_MODE_TYPE_INDEX_COLOR
+      | GRUB_VIDEO_MODE_TYPE_ALPHA:
+      target->mode_info.mode_type = GRUB_VIDEO_MODE_TYPE_INDEX_COLOR
+	| GRUB_VIDEO_MODE_TYPE_ALPHA;
+      target->mode_info.bpp = 8;
+      target->mode_info.bytes_per_pixel = 1;
+      target->mode_info.number_of_colors = 16;
+      target->mode_info.blit_format = GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR_ALPHA;
+      break;
+    default:
+      target->mode_info.mode_type = GRUB_VIDEO_MODE_TYPE_RGB
+	| GRUB_VIDEO_MODE_TYPE_ALPHA;
+      target->mode_info.bpp = 32;
+      target->mode_info.bytes_per_pixel = 4;
+      target->mode_info.red_mask_size = 8;
+      target->mode_info.red_field_pos = 0;
+      target->mode_info.green_mask_size = 8;
+      target->mode_info.green_field_pos = 8;
+      target->mode_info.blue_mask_size = 8;
+      target->mode_info.blue_field_pos = 16;
+      target->mode_info.reserved_mask_size = 8;
+      target->mode_info.reserved_field_pos = 24;
+      target->mode_info.number_of_colors = framebuffer.palette_size; /* Emulated palette.  */
+      target->mode_info.blit_format = GRUB_VIDEO_BLIT_FORMAT_RGBA_8888;
+      break;
+    }
   target->mode_info.pitch = target->mode_info.bytes_per_pixel * width;
-  target->mode_info.number_of_colors = framebuffer.palette_size; /* Emulated palette.  */
-  target->mode_info.red_mask_size = 8;
-  target->mode_info.red_field_pos = 0;
-  target->mode_info.green_mask_size = 8;
-  target->mode_info.green_field_pos = 8;
-  target->mode_info.blue_mask_size = 8;
-  target->mode_info.blue_field_pos = 16;
-  target->mode_info.reserved_mask_size = 8;
-  target->mode_info.reserved_field_pos = 24;
-
-  target->mode_info.blit_format = grub_video_get_blit_format (&target->mode_info);
 
   /* Calculate size needed for the data.  */
   size = (width * target->mode_info.bytes_per_pixel) * height;
@@ -1177,7 +1294,11 @@ grub_video_fb_create_render_target (struct grub_video_fbrender_target **result,
     }
 
   /* Clear render target with black and maximum transparency.  */
-  grub_memset (target->data, 0, size);
+  if (mode_type == (GRUB_VIDEO_MODE_TYPE_INDEX_COLOR
+		    | GRUB_VIDEO_MODE_TYPE_ALPHA))
+    grub_memset (target->data, 0xf0, size);
+  else
+    grub_memset (target->data, 0, size);
 
   /* TODO: Add render target to render target list.  */
 
@@ -1195,6 +1316,15 @@ grub_video_fb_create_render_target_from_pointer (struct grub_video_fbrender_targ
   struct grub_video_fbrender_target *target;
   unsigned y;
 
+#ifndef GRUB_HAVE_UNALIGNED_ACCESS
+  if (!(mode_info->bytes_per_pixel & (mode_info->bytes_per_pixel - 1))
+      && ((grub_addr_t) ptr & (mode_info->bytes_per_pixel - 1)))
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, "unaligned pointer");
+  if (!(mode_info->bytes_per_pixel & (mode_info->bytes_per_pixel - 1))
+      && (mode_info->pitch & (mode_info->bytes_per_pixel - 1)))
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, "unaligned pitch");
+#endif
+
   /* Allocate memory for render target.  */
   target = grub_malloc (sizeof (struct grub_video_fbrender_target));
   if (! target)
@@ -1206,11 +1336,24 @@ grub_video_fb_create_render_target_from_pointer (struct grub_video_fbrender_targ
 
   grub_memcpy (&(target->mode_info), mode_info, sizeof (target->mode_info));
 
-  /* Reset viewport to match new mode.  */
+  /* Reset viewport, region and area to match new mode.  */
   target->viewport.x = 0;
   target->viewport.y = 0;
   target->viewport.width = mode_info->width;
   target->viewport.height = mode_info->height;
+
+  target->region.x = 0;
+  target->region.y = 0;
+  target->region.width = mode_info->width;
+  target->region.height = mode_info->height;
+
+  target->area_enabled = 0;
+  target->area.x = 0;
+  target->area.y = 0;
+  target->area.width = mode_info->width;
+  target->area.height = mode_info->height;
+  target->area_offset_x = 0;
+  target->area_offset_y = 0;
 
   /* Clear render target with black and maximum transparency.  */
   for (y = 0; y < mode_info->height; y++)
@@ -1250,7 +1393,7 @@ grub_video_fb_set_active_render_target (struct grub_video_fbrender_target *targe
     target = framebuffer.back_target;
 
   if (! target->data)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT,
+    return grub_error (GRUB_ERR_BUG,
                        "invalid render target given");
 
   framebuffer.render_target = target;
@@ -1270,63 +1413,85 @@ grub_video_fb_get_active_render_target (struct grub_video_fbrender_target **targ
 }
 
 static grub_err_t
-doublebuf_blit_update_screen (struct grub_video_fbrender_target *front,
-			      struct grub_video_fbrender_target *back)
+doublebuf_blit_update_screen (void)
 {
-  grub_memcpy (front->data, back->data,
-	       front->mode_info.pitch * front->mode_info.height);
+  if (framebuffer.current_dirty.first_line
+      <= framebuffer.current_dirty.last_line)
+    grub_memcpy ((char *) framebuffer.pages[0]
+		 + framebuffer.current_dirty.first_line
+		 * framebuffer.back_target->mode_info.pitch,
+		 (char *) framebuffer.back_target->data
+		 + framebuffer.current_dirty.first_line
+		 * framebuffer.back_target->mode_info.pitch,
+		 framebuffer.back_target->mode_info.pitch
+		 * (framebuffer.current_dirty.last_line
+		    - framebuffer.current_dirty.first_line));
+  framebuffer.current_dirty.first_line
+    = framebuffer.back_target->mode_info.height;
+  framebuffer.current_dirty.last_line = 0;
+
   return GRUB_ERR_NONE;
 }
 
 static grub_err_t
-grub_video_fb_doublebuf_blit_init (struct grub_video_fbrender_target **front,
-				   struct grub_video_fbrender_target **back,
+grub_video_fb_doublebuf_blit_init (struct grub_video_fbrender_target **back,
 				   struct grub_video_mode_info mode_info,
-				   void *framebuf)
+				   volatile void *framebuf)
 {
   grub_err_t err;
-  int page_size = mode_info.pitch * mode_info.height;
+  grub_size_t page_size = mode_info.pitch * mode_info.height;
 
-  err = grub_video_fb_create_render_target_from_pointer (front, &mode_info,
-							 framebuf);
-  if (err)
-    return err;
-
-  framebuffer.offscreen_buffer = grub_malloc (page_size);
+  framebuffer.offscreen_buffer = grub_zalloc (page_size);
   if (! framebuffer.offscreen_buffer)
-    {
-      grub_video_fb_delete_render_target (*front);
-      *front = 0;
-      return grub_errno;
-    }
+    return grub_errno;
 
-  err = grub_video_fb_create_render_target_from_pointer (back, &mode_info,
+  err = grub_video_fb_create_render_target_from_pointer (&framebuffer.back_target,
+							 &mode_info,
 							 framebuffer.offscreen_buffer);
 
   if (err)
     {
-      grub_video_fb_delete_render_target (*front);
       grub_free (framebuffer.offscreen_buffer);
       framebuffer.offscreen_buffer = 0;
-      *front = 0;
       return grub_errno;
     }
   (*back)->is_allocated = 1;
 
   framebuffer.update_screen = doublebuf_blit_update_screen;
+  framebuffer.pages[0] = framebuf;
+  framebuffer.displayed_page = 0;
+  framebuffer.render_page = 0;
+  framebuffer.current_dirty.first_line = mode_info.height;
+  framebuffer.current_dirty.last_line = 0;
 
   return GRUB_ERR_NONE;
 }
 
 static grub_err_t
-doublebuf_pageflipping_update_screen (struct grub_video_fbrender_target *front
-				      __attribute__ ((unused)),
-				      struct grub_video_fbrender_target *back
-				      __attribute__ ((unused)))
+doublebuf_pageflipping_update_screen (void)
 {
   int new_displayed_page;
-  struct grub_video_fbrender_target *target;
   grub_err_t err;
+  int first_line, last_line;
+
+  first_line = framebuffer.current_dirty.first_line;
+  last_line = framebuffer.current_dirty.last_line;
+  if (first_line > framebuffer.previous_dirty.first_line)
+    first_line = framebuffer.previous_dirty.first_line;
+  if (last_line < framebuffer.previous_dirty.last_line)
+    last_line = framebuffer.previous_dirty.last_line;
+
+  if (first_line <= last_line)
+    grub_memcpy ((char *) framebuffer.pages[framebuffer.render_page]
+		 + first_line * framebuffer.back_target->mode_info.pitch,
+		 (char *) framebuffer.back_target->data
+		 + first_line * framebuffer.back_target->mode_info.pitch,
+		 framebuffer.back_target->mode_info.pitch
+		 * (last_line - first_line));
+  framebuffer.previous_dirty = framebuffer.current_dirty;
+  framebuffer.current_dirty.first_line
+    = framebuffer.back_target->mode_info.height;
+  framebuffer.current_dirty.last_line = 0;
 
   /* Swap the page numbers in the framebuffer struct.  */
   new_displayed_page = framebuffer.render_page;
@@ -1342,26 +1507,7 @@ doublebuf_pageflipping_update_screen (struct grub_video_fbrender_target *front
       return err;
     }
 
-  target = framebuffer.back_target;
-  framebuffer.back_target = framebuffer.front_target;
-  framebuffer.front_target = target;
-
-  if (framebuffer.front_target->mode_info.mode_type
-      & GRUB_VIDEO_MODE_TYPE_UPDATING_SWAP)
-    grub_memcpy (framebuffer.back_target->data, framebuffer.front_target->data,
-		 framebuffer.back_target->mode_info.pitch
-		 * framebuffer.back_target->mode_info.height);
-
-  err = grub_video_fb_get_active_render_target (&target);
-  if (err)
-    return err;
-
-  if (framebuffer.render_target == framebuffer.back_target)
-    framebuffer.render_target = framebuffer.front_target;
-  else if (framebuffer.render_target == framebuffer.front_target)
-    framebuffer.render_target = framebuffer.back_target;
-
-  return err;
+  return GRUB_ERR_NONE;
 }
 
 static grub_err_t
@@ -1371,32 +1517,44 @@ doublebuf_pageflipping_init (struct grub_video_mode_info *mode_info,
 			     volatile void *page1_ptr)
 {
   grub_err_t err;
+  grub_size_t page_size = mode_info->pitch * mode_info->height;
+
+  framebuffer.offscreen_buffer = grub_malloc (page_size);
+  if (! framebuffer.offscreen_buffer)
+    {
+      return grub_errno;
+    }
+
+  err = grub_video_fb_create_render_target_from_pointer (&framebuffer.back_target,
+							 mode_info,
+							 framebuffer.offscreen_buffer);
+
+  if (err)
+    {
+      grub_free (framebuffer.offscreen_buffer);
+      framebuffer.offscreen_buffer = 0;
+      return grub_errno;
+    }
+  framebuffer.back_target->is_allocated = 1;
 
   framebuffer.displayed_page = 0;
   framebuffer.render_page = 1;
 
   framebuffer.update_screen = doublebuf_pageflipping_update_screen;
+  framebuffer.pages[0] = page0_ptr;
+  framebuffer.pages[1] = page1_ptr;
 
-  err = grub_video_fb_create_render_target_from_pointer (&framebuffer.front_target,
-							 mode_info,
-							 (void *) page0_ptr);
-  if (err)
-    return err;
-
-  err = grub_video_fb_create_render_target_from_pointer (&framebuffer.back_target,
-							 mode_info,
-							 (void *) page1_ptr);
-  if (err)
-    {
-      grub_video_fb_delete_render_target (framebuffer.front_target);
-      return err;
-    }
+  framebuffer.current_dirty.first_line
+    = framebuffer.back_target->mode_info.height;
+  framebuffer.current_dirty.last_line = 0;
+  framebuffer.previous_dirty.first_line
+    = framebuffer.back_target->mode_info.height;
+  framebuffer.previous_dirty.last_line = 0;
 
   /* Set the framebuffer memory data pointer and display the right page.  */
   err = set_page_in (framebuffer.displayed_page);
   if (err)
     {
-      grub_video_fb_delete_render_target (framebuffer.front_target);
       grub_video_fb_delete_render_target (framebuffer.back_target);
       return err;
     }
@@ -1414,20 +1572,14 @@ grub_video_fb_setup (unsigned int mode_type, unsigned int mode_mask,
 		     volatile void *page1_ptr)
 {
   grub_err_t err;
-  int updating_swap_needed;
-
-  updating_swap_needed
-    = grub_video_check_mode_flag (mode_type, mode_mask,
-				  GRUB_VIDEO_MODE_TYPE_UPDATING_SWAP, 0);
 
   /* Do double buffering only if it's either requested or efficient.  */
   if (set_page_in && grub_video_check_mode_flag (mode_type, mode_mask,
 						 GRUB_VIDEO_MODE_TYPE_DOUBLE_BUFFERED,
-						 !updating_swap_needed))
+						 1))
     {
       mode_info->mode_type |= GRUB_VIDEO_MODE_TYPE_DOUBLE_BUFFERED;
-      if (updating_swap_needed)
-	mode_info->mode_type |= GRUB_VIDEO_MODE_TYPE_UPDATING_SWAP;
+      mode_info->mode_type |= GRUB_VIDEO_MODE_TYPE_UPDATING_SWAP;
 
       err = doublebuf_pageflipping_init (mode_info, page0_ptr,
 					 set_page_in,
@@ -1446,7 +1598,7 @@ grub_video_fb_setup (unsigned int mode_type, unsigned int mode_mask,
 
   if (grub_video_check_mode_flag (mode_type, mode_mask,
 				  GRUB_VIDEO_MODE_TYPE_DOUBLE_BUFFERED,
-				  0))
+				  1))
     {
       /* It was much nicer with the cast directly at function call but
 	 some older gcc versions don't accept it properly.*/
@@ -1454,8 +1606,7 @@ grub_video_fb_setup (unsigned int mode_type, unsigned int mode_mask,
       mode_info->mode_type |= (GRUB_VIDEO_MODE_TYPE_DOUBLE_BUFFERED
 			       | GRUB_VIDEO_MODE_TYPE_UPDATING_SWAP);
 
-      err = grub_video_fb_doublebuf_blit_init (&framebuffer.front_target,
-					       &framebuffer.back_target,
+      err = grub_video_fb_doublebuf_blit_init (&framebuffer.back_target,
 					       *mode_info,
 					       tmp);
 
@@ -1472,15 +1623,21 @@ grub_video_fb_setup (unsigned int mode_type, unsigned int mode_mask,
     }
 
   /* Fall back to no double buffering.  */
-  err = grub_video_fb_create_render_target_from_pointer (&framebuffer.front_target,
+  err = grub_video_fb_create_render_target_from_pointer (&framebuffer.back_target,
 							 mode_info,
 							 (void *) page0_ptr);
 
   if (err)
     return err;
 
-  framebuffer.back_target = framebuffer.front_target;
   framebuffer.update_screen = 0;
+  framebuffer.pages[0] = page0_ptr;
+  framebuffer.displayed_page = 0;
+  framebuffer.render_page = 0;
+  framebuffer.set_page = 0;
+  framebuffer.current_dirty.first_line
+    = framebuffer.back_target->mode_info.height;
+  framebuffer.current_dirty.last_line = 0;
 
   mode_info->mode_type &= ~GRUB_VIDEO_MODE_TYPE_DOUBLE_BUFFERED;
 
@@ -1497,8 +1654,7 @@ grub_video_fb_swap_buffers (void)
   if (!framebuffer.update_screen)
     return GRUB_ERR_NONE;
 
-  err = framebuffer.update_screen (framebuffer.front_target,
-				   framebuffer.back_target);
+  err = framebuffer.update_screen ();
   if (err)
     return err;
 
@@ -1509,23 +1665,17 @@ grub_err_t
 grub_video_fb_get_info_and_fini (struct grub_video_mode_info *mode_info,
 				 void **framebuf)
 {
-  grub_memcpy (mode_info, &(framebuffer.front_target->mode_info),
+  grub_memcpy (mode_info, &(framebuffer.back_target->mode_info),
 	       sizeof (*mode_info));
 
   /* We are about to load a kernel.  Switch back to page zero, since some
      kernel drivers expect that.  */
-  if ((mode_info->mode_type & GRUB_VIDEO_MODE_TYPE_DOUBLE_BUFFERED)
-      && framebuffer.set_page && framebuffer.displayed_page != 0)
+  if (framebuffer.set_page && framebuffer.displayed_page != 0)
     {
-      /* Ensure both pages are exactly in sync.  */
-      grub_memcpy (framebuffer.back_target->data,
-		   framebuffer.front_target->data,
-		   framebuffer.back_target->mode_info.pitch
-		   * framebuffer.back_target->mode_info.height);
-      grub_video_swap_buffers ();
+      framebuffer.update_screen ();
     }
 
-  *framebuf = framebuffer.front_target->data;
+  *framebuf = (void *) framebuffer.pages[framebuffer.displayed_page];
 
   grub_video_fb_fini ();
 

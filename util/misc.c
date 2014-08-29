@@ -26,9 +26,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 #include <sys/time.h>
-#include <unistd.h>
 #include <time.h>
 
 #include <grub/kernel.h>
@@ -42,19 +40,13 @@
 #include <grub/time.h>
 #include <grub/i18n.h>
 #include <grub/script_sh.h>
+#include <grub/emu/hostfile.h>
 
 #define ENABLE_RELOCATABLE 0
+#ifdef GRUB_BUILD
+const char *program_name = GRUB_BUILD_PROGRAM_NAME;
+#else
 #include "progname.h"
-
-/* Include malloc.h, only if memalign is available. It is known that
-   memalign is declared in malloc.h in all systems, if present.  */
-#ifdef HAVE_MEMALIGN
-# include <malloc.h>
-#endif
-
-#ifdef __MINGW32__
-#include <windows.h>
-#include <winioctl.h>
 #endif
 
 #ifdef GRUB_UTIL
@@ -83,40 +75,27 @@ grub_util_get_path (const char *dir, const char *file)
 }
 
 size_t
-grub_util_get_fp_size (FILE *fp)
-{
-  struct stat st;
-
-  if (fflush (fp) == EOF)
-    grub_util_error ("fflush failed");
-
-  if (fstat (fileno (fp), &st) == -1)
-    grub_util_error ("fstat failed");
-
-  return st.st_size;
-}
-
-size_t
 grub_util_get_image_size (const char *path)
 {
-  struct stat st;
+  FILE *f;
+  size_t ret;
+  off_t sz;
 
-  grub_util_info ("getting the size of %s", path);
+  f = grub_util_fopen (path, "rb");
 
-  if (stat (path, &st) == -1)
-    grub_util_error ("cannot stat %s", path);
+  if (!f)
+    grub_util_error (_("cannot open `%s': %s"), path, strerror (errno));
 
-  return st.st_size;
-}
+  fseeko (f, 0, SEEK_END);
+  
+  sz = ftello (f);
+  if (sz != (size_t) sz)
+    grub_util_error (_("file `%s' is too big"), path);
+  ret = (size_t) sz;
 
-void
-grub_util_read_at (void *img, size_t size, off_t offset, FILE *fp)
-{
-  if (fseeko (fp, offset, SEEK_SET) == -1)
-    grub_util_error ("seek failed");
+  fclose (f);
 
-  if (fread (img, 1, size, fp) != size)
-    grub_util_error ("read failed");
+  return ret;
 }
 
 char *
@@ -131,11 +110,14 @@ grub_util_read_image (const char *path)
   size = grub_util_get_image_size (path);
   img = (char *) xmalloc (size);
 
-  fp = fopen (path, "rb");
+  fp = grub_util_fopen (path, "rb");
   if (! fp)
-    grub_util_error ("cannot open %s", path);
+    grub_util_error (_("cannot open `%s': %s"), path,
+		     strerror (errno));
 
-  grub_util_read_at (img, size, 0, fp);
+  if (fread (img, 1, size, fp) != size)
+    grub_util_error (_("cannot read `%s': %s"), path,
+		     strerror (errno));
 
   fclose (fp);
 
@@ -152,38 +134,47 @@ grub_util_load_image (const char *path, char *buf)
 
   size = grub_util_get_image_size (path);
 
-  fp = fopen (path, "rb");
+  fp = grub_util_fopen (path, "rb");
   if (! fp)
-    grub_util_error ("cannot open %s", path);
+    grub_util_error (_("cannot open `%s': %s"), path,
+		     strerror (errno));
 
   if (fread (buf, 1, size, fp) != size)
-    grub_util_error ("cannot read %s", path);
+    grub_util_error (_("cannot read `%s': %s"), path,
+		     strerror (errno));
 
   fclose (fp);
 }
 
 void
-grub_util_write_image_at (const void *img, size_t size, off_t offset, FILE *out)
+grub_util_write_image_at (const void *img, size_t size, off_t offset, FILE *out,
+			  const char *name)
 {
-  grub_util_info ("writing 0x%x bytes at offset 0x%x", size, offset);
+  grub_util_info ("writing 0x%" GRUB_HOST_PRIxLONG_LONG " bytes at offset 0x%"
+		  GRUB_HOST_PRIxLONG_LONG,
+		  (unsigned long long) size, (unsigned long long) offset);
   if (fseeko (out, offset, SEEK_SET) == -1)
-    grub_util_error ("seek failed");
+    grub_util_error (_("cannot seek `%s': %s"),
+		     name, strerror (errno));
   if (fwrite (img, 1, size, out) != size)
-    grub_util_error ("write failed");
+    grub_util_error (_("cannot write to `%s': %s"),
+		     name, strerror (errno));
 }
 
 void
-grub_util_write_image (const char *img, size_t size, FILE *out)
+grub_util_write_image (const char *img, size_t size, FILE *out,
+		       const char *name)
 {
-  grub_util_info ("writing 0x%x bytes", size);
+  grub_util_info ("writing 0x%" GRUB_HOST_PRIxLONG_LONG " bytes", (unsigned long long) size);
   if (fwrite (img, 1, size, out) != size)
-    grub_util_error ("write failed");
-}
-
-char *
-grub_script_execute_argument_to_string (struct grub_script_arg *arg __attribute__ ((unused)))
-{
-  return 0;
+    {
+      if (!name)
+	grub_util_error (_("cannot write to the stdout: %s"),
+			 strerror (errno));
+      else
+	grub_util_error (_("cannot write to `%s': %s"),
+			 name, strerror (errno));
+    }
 }
 
 grub_err_t
@@ -217,24 +208,12 @@ grub_script_execute_cmdwhile (struct grub_script_cmd *cmd __attribute__ ((unused
 }
 
 grub_err_t
-grub_script_execute_menuentry (struct grub_script_cmd *cmd __attribute__ ((unused)))
-{
-  return 0;
-}
-
-grub_err_t
 grub_script_execute (struct grub_script *script)
 {
   if (script == 0 || script->cmd == 0)
     return 0;
 
   return script->cmd->exec (script->cmd);
-}
-
-void
-grub_putchar (int c)
-{
-  putchar (c);
 }
 
 int
@@ -283,97 +262,10 @@ grub_register_exported_symbols (void)
 {
 }
 
-#ifdef __MINGW32__
-
-void
-grub_millisleep (grub_uint32_t ms)
+/* Used in comparison of arrays of strings with qsort */
+int
+grub_qsort_strcmp (const void *p1, const void *p2)
 {
-  Sleep (ms);
+  return strcmp(*(char *const *)p1, *(char *const *)p2);
 }
 
-#else
-
-void
-grub_millisleep (grub_uint32_t ms)
-{
-  struct timespec ts;
-
-  ts.tv_sec = ms / 1000;
-  ts.tv_nsec = (ms % 1000) * 1000000;
-  nanosleep (&ts, NULL);
-}
-
-#endif
-
-#ifdef __MINGW32__
-
-void sync (void)
-{
-}
-
-int fsync (int fno __attribute__ ((unused)))
-{
-  return 0;
-}
-
-void sleep (int s)
-{
-  Sleep (s * 1000);
-}
-
-grub_int64_t
-grub_util_get_disk_size (char *name)
-{
-  HANDLE hd;
-  grub_int64_t size = -1LL;
-
-  hd = CreateFile (name, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                   0, OPEN_EXISTING, 0, 0);
-
-  if (hd == INVALID_HANDLE_VALUE)
-    return size;
-
-  if (((name[0] == '/') || (name[0] == '\\')) &&
-      ((name[1] == '/') || (name[1] == '\\')) &&
-      (name[2] == '.') &&
-      ((name[3] == '/') || (name[3] == '\\')) &&
-      (! strncasecmp (name + 4, "PHYSICALDRIVE", 13)))
-    {
-      DWORD nr;
-      DISK_GEOMETRY g;
-
-      if (! DeviceIoControl (hd, IOCTL_DISK_GET_DRIVE_GEOMETRY,
-                             0, 0, &g, sizeof (g), &nr, 0))
-        goto fail;
-
-      size = g.Cylinders.QuadPart;
-      size *= g.TracksPerCylinder * g.SectorsPerTrack * g.BytesPerSector;
-    }
-  else
-    {
-      LARGE_INTEGER s;
-
-      s.LowPart = GetFileSize (hd, &s.HighPart);
-      size = s.QuadPart;
-    }
-
-fail:
-
-  CloseHandle (hd);
-
-  return size;
-}
-
-#endif /* __MINGW32__ */
-
-#ifdef GRUB_UTIL
-void
-grub_util_init_nls (void)
-{
-#if (defined(ENABLE_NLS) && ENABLE_NLS)
-  setlocale (LC_ALL, "");
-  bindtextdomain (PACKAGE, LOCALEDIR);
-  textdomain (PACKAGE);
-#endif /* (defined(ENABLE_NLS) && ENABLE_NLS) */
-}
-#endif

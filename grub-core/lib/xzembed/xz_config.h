@@ -26,6 +26,17 @@
 
 /* Enable BCJ filter decoders. */
 
+#ifndef GRUB_EMBED_DECOMPRESSOR
+
+#define XZ_DEC_X86
+#define XZ_DEC_POWERPC
+#define XZ_DEC_IA64
+#define XZ_DEC_ARM
+#define XZ_DEC_ARMTHUMB
+#define XZ_DEC_SPARC
+
+#else
+
 #if defined(__i386__) || defined(__x86_64__)
   #define XZ_DEC_X86
 #endif
@@ -42,14 +53,14 @@
   #define XZ_DEC_ARM
 #endif
 
-#ifdef __thumb__
+#ifdef __arm__
   #define XZ_DEC_ARMTHUMB
 #endif
 
 #ifdef __sparc__
   #define XZ_DEC_SPARC
 #endif
-
+#endif
 
 #include "xz.h"
 #include <stdlib.h>

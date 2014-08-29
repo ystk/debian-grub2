@@ -40,91 +40,6 @@ GRUB_MOD_LICENSE ("GPLv3+");
 static int nested_level = 0;
 int grub_normal_exit_level = 0;
 
-/* Read a line from the file FILE.  */
-char *
-grub_file_getline (grub_file_t file)
-{
-  char c;
-  int pos = 0;
-  int literal = 0;
-  char *cmdline;
-  int max_len = 64;
-
-  /* Initially locate some space.  */
-  cmdline = grub_malloc (max_len);
-  if (! cmdline)
-    return 0;
-
-  while (1)
-    {
-      if (grub_file_read (file, &c, 1) != 1)
-	break;
-
-      /* Skip all carriage returns.  */
-      if (c == '\r')
-	continue;
-
-      /* Replace tabs with spaces.  */
-      if (c == '\t')
-	c = ' ';
-
-      /* The previous is a backslash, then...  */
-      if (literal)
-	{
-	  /* If it is a newline, replace it with a space and continue.  */
-	  if (c == '\n')
-	    {
-	      c = ' ';
-
-	      /* Go back to overwrite the backslash.  */
-	      if (pos > 0)
-		pos--;
-	    }
-
-	  literal = 0;
-	}
-
-      if (c == '\\')
-	literal = 1;
-
-      if (pos == 0)
-	{
-	  if (! grub_isspace (c))
-	    cmdline[pos++] = c;
-	}
-      else
-	{
-	  if (pos >= max_len)
-	    {
-	      char *old_cmdline = cmdline;
-	      max_len = max_len * 2;
-	      cmdline = grub_realloc (cmdline, max_len);
-	      if (! cmdline)
-		{
-		  grub_free (old_cmdline);
-		  return 0;
-		}
-	    }
-
-	  if (c == '\n')
-	    break;
-
-	  cmdline[pos++] = c;
-	}
-    }
-
-  cmdline[pos] = '\0';
-
-  /* If the buffer is empty, don't return anything at all.  */
-  if (pos == 0)
-    {
-      grub_free (cmdline);
-      cmdline = 0;
-    }
-
-  return cmdline;
-}
-
 void
 grub_normal_free_menu (grub_menu_t menu)
 {
@@ -133,9 +48,28 @@ grub_normal_free_menu (grub_menu_t menu)
   while (entry)
     {
       grub_menu_entry_t next_entry = entry->next;
+      grub_size_t i;
 
+      if (entry->classes)
+	{
+	  struct grub_menu_entry_class *class;
+	  for (class = entry->classes; class; class = class->next)
+	    grub_free (class->name);
+	  grub_free (entry->classes);
+	}
+
+      if (entry->args)
+	{
+	  for (i = 0; entry->args[i]; i++)
+	    grub_free (entry->args[i]);
+	  grub_free (entry->args);
+	}
+
+      grub_free ((void *) entry->id);
+      grub_free ((void *) entry->users);
       grub_free ((void *) entry->title);
       grub_free ((void *) entry->sourcecode);
+      grub_free (entry);
       entry = next_entry;
     }
 
@@ -143,30 +77,37 @@ grub_normal_free_menu (grub_menu_t menu)
   grub_env_unset_menu ();
 }
 
+/* Helper for read_config_file.  */
+static grub_err_t
+read_config_file_getline (char **line, int cont __attribute__ ((unused)),
+			  void *data)
+{
+  grub_file_t file = data;
+
+  while (1)
+    {
+      char *buf;
+
+      *line = buf = grub_file_getline (file);
+      if (! buf)
+	return grub_errno;
+
+      if (buf[0] == '#')
+	grub_free (*line);
+      else
+	break;
+    }
+
+  return GRUB_ERR_NONE;
+}
+
 static grub_menu_t
 read_config_file (const char *config)
 {
   grub_file_t file;
-
-  auto grub_err_t getline (char **line, int cont);
-  grub_err_t getline (char **line, int cont __attribute__ ((unused)))
-    {
-      while (1)
-	{
-	  char *buf;
-
-	  *line = buf = grub_file_getline (file);
-	  if (! buf)
-	    return grub_errno;
-
-	  if (buf[0] == '#')
-	    grub_free (*line);
-	  else
-	    break;
-	}
-
-      return GRUB_ERR_NONE;
-    }
+  char *old_file = 0, *old_dir = 0;
+  char *config_dir, *ptr = 0;
+  const char *ctmp;
 
   grub_menu_t newmenu;
 
@@ -185,6 +126,36 @@ read_config_file (const char *config)
   if (! file)
     return 0;
 
+  ctmp = grub_env_get ("config_file");
+  if (ctmp)
+    old_file = grub_strdup (ctmp);
+  ctmp = grub_env_get ("config_directory");
+  if (ctmp)
+    old_dir = grub_strdup (ctmp);
+  if (*config == '(')
+    {
+      grub_env_set ("config_file", config);
+      config_dir = grub_strdup (config);
+    }
+  else
+    {
+      /* $root is guranteed to be defined, otherwise open above would fail */
+      config_dir = grub_xasprintf ("(%s)%s", grub_env_get ("root"), config);
+      if (config_dir)
+	grub_env_set ("config_file", config_dir);
+    }
+  if (config_dir)
+    {
+      ptr = grub_strrchr (config_dir, '/');
+      if (ptr)
+	*ptr = 0;
+      grub_env_set ("config_directory", config_dir);
+      grub_free (config_dir);
+    }
+
+  grub_env_export ("config_file");
+  grub_env_export ("config_directory");
+
   while (1)
     {
       char *line;
@@ -193,12 +164,23 @@ read_config_file (const char *config)
       grub_print_error ();
       grub_errno = GRUB_ERR_NONE;
 
-      if ((getline (&line, 0)) || (! line))
+      if ((read_config_file_getline (&line, 0, file)) || (! line))
 	break;
 
-      grub_normal_parse_line (line, getline);
+      grub_normal_parse_line (line, read_config_file_getline, file);
       grub_free (line);
     }
+
+  if (old_file)
+    grub_env_set ("config_file", old_file);
+  else
+    grub_env_unset ("config_file");
+  if (old_dir)
+    grub_env_set ("config_directory", old_dir);
+  else
+    grub_env_unset ("config_directory");
+  grub_free (old_file);
+  grub_free (old_dir);
 
   grub_file_close (file);
 
@@ -207,18 +189,18 @@ read_config_file (const char *config)
 
 /* Initialize the screen.  */
 void
-grub_normal_init_page (struct grub_term_output *term)
+grub_normal_init_page (struct grub_term_output *term,
+		       int y)
 {
-  int msg_len;
+  grub_ssize_t msg_len;
   int posx;
-  const char *msg = _("GNU GRUB  version %s");
   char *msg_formatted;
   grub_uint32_t *unicode_msg;
   grub_uint32_t *last_position;
  
   grub_term_cls (term);
 
-  msg_formatted = grub_xasprintf (msg, PACKAGE_VERSION);
+  msg_formatted = grub_xasprintf (_("GNU GRUB  version %s"), PACKAGE_VERSION);
   if (!msg_formatted)
     return;
  
@@ -232,8 +214,10 @@ grub_normal_init_page (struct grub_term_output *term)
     }
 
   posx = grub_getstringwidth (unicode_msg, last_position, term);
-  posx = (grub_term_width (term) - posx) / 2;
-  grub_term_gotoxy (term, posx, 1);
+  posx = ((int) grub_term_width (term) - posx) / 2;
+  if (posx < 0)
+    posx = 0;
+  grub_term_gotoxy (term, (struct grub_term_coordinate) { posx, y });
 
   grub_print_ucs4 (unicode_msg, last_position, 0, 0, term);
   grub_putcode ('\n', term);
@@ -244,13 +228,14 @@ grub_normal_init_page (struct grub_term_output *term)
 static void
 read_lists (const char *val)
 {
-  if (! grub_no_autoload)
+  if (! grub_no_modules)
     {
       read_command_list (val);
       read_fs_list (val);
       read_crypto_list (val);
       read_terminal_list (val);
     }
+  grub_gettext_reread_prefix (val);
 }
 
 static char *
@@ -274,8 +259,9 @@ grub_normal_execute (const char *config, int nested, int batch)
       prefix = grub_env_get ("prefix");
       read_lists (prefix);
       grub_register_variable_hook ("prefix", NULL, read_lists_hook);
-      grub_command_execute ("parser.grub", 0, 0);
     }
+
+  grub_boot_time ("Executing config file");
 
   if (config)
     {
@@ -285,10 +271,14 @@ grub_normal_execute (const char *config, int nested, int batch)
       grub_errno = GRUB_ERR_NONE;
     }
 
+  grub_boot_time ("Executed config file");
+
   if (! batch)
     {
       if (menu && menu->size)
 	{
+
+	  grub_boot_time ("Entering menu");
 	  grub_show_menu (menu, nested, 0);
 	  if (nested)
 	    grub_normal_free_menu (menu);
@@ -300,12 +290,15 @@ grub_normal_execute (const char *config, int nested, int batch)
 void
 grub_enter_normal_mode (const char *config)
 {
+  grub_boot_time ("Entering normal mode");
   nested_level++;
   grub_normal_execute (config, 0, 0);
+  grub_boot_time ("Entering shell");
   grub_cmdline_run (0);
   nested_level--;
   if (grub_normal_exit_level)
     grub_normal_exit_level--;
+  grub_boot_time ("Exiting normal mode");
 }
 
 /* Enter normal mode from rescue mode.  */
@@ -356,22 +349,26 @@ static grub_err_t
 grub_normal_reader_init (int nested)
 {
   struct grub_term_output *term;
-  const char *msg = _("Minimal BASH-like line editing is supported. For "
-		      "the first word, TAB lists possible command completions. Anywhere "
-		      "else TAB lists possible device or file completions. %s");
   const char *msg_esc = _("ESC at any time exits.");
   char *msg_formatted;
 
-  msg_formatted = grub_xasprintf (msg, nested ? msg_esc : "");
+  msg_formatted = grub_xasprintf (_("Minimal BASH-like line editing is supported. For "
+				    "the first word, TAB lists possible command completions. Anywhere "
+				    "else TAB lists possible device or file completions. %s"),
+				  nested ? msg_esc : "");
   if (!msg_formatted)
     return grub_errno;
 
   FOR_ACTIVE_TERM_OUTPUTS(term)
   {
-    grub_normal_init_page (term);
+    grub_normal_init_page (term, 1);
     grub_term_setcursor (term, 1);
 
-    grub_print_message_indented (msg_formatted, 3, STANDARD_MARGIN, term);
+    if (grub_term_width (term) > 3 + STANDARD_MARGIN + 20)
+      grub_print_message_indented (msg_formatted, 3, STANDARD_MARGIN, term);
+    else
+      grub_print_message_indented (msg_formatted, 0, 0, term);
+    grub_putcode ('\n', term);
     grub_putcode ('\n', term);
     grub_putcode ('\n', term);
   }
@@ -386,9 +383,11 @@ grub_normal_read_line_real (char **line, int cont, int nested)
   const char *prompt;
 
   if (cont)
-    prompt = ">";
+    /* TRANSLATORS: it's command line prompt.  */
+    prompt = _(">");
   else
-    prompt = "grub>";
+    /* TRANSLATORS: it's command line prompt.  */
+    prompt = _("grub>");
 
   if (!prompt)
     return grub_errno;
@@ -397,7 +396,7 @@ grub_normal_read_line_real (char **line, int cont, int nested)
     {
       *line = grub_cmdline_get (prompt);
       if (*line)
-	break;
+	return 0;
 
       if (cont || nested)
 	{
@@ -406,12 +405,12 @@ grub_normal_read_line_real (char **line, int cont, int nested)
 	  return grub_errno;
 	}
     }
-  
-  return 0;
+ 
 }
 
 static grub_err_t
-grub_normal_read_line (char **line, int cont)
+grub_normal_read_line (char **line, int cont,
+		       void *data __attribute__ ((unused)))
 {
   return grub_normal_read_line_real (line, cont, 0);
 }
@@ -447,7 +446,7 @@ grub_cmdline_run (int nested)
       if (! line)
 	break;
 
-      grub_normal_parse_line (line, grub_normal_read_line);
+      grub_normal_parse_line (line, grub_normal_read_line, NULL);
       grub_free (line);
     }
 }
@@ -473,11 +472,22 @@ grub_mini_cmd_clear (struct grub_command *cmd __attribute__ ((unused)),
 static grub_command_t cmd_clear;
 
 static void (*grub_xputs_saved) (const char *str);
+static const char *features[] = {
+  "feature_chainloader_bpb", "feature_ntldr", "feature_platform_search_hint",
+  "feature_default_font_path", "feature_all_video_module",
+  "feature_menuentry_id", "feature_menuentry_options", "feature_200_final",
+  "feature_nativedisk_cmd", "feature_timeout_style"
+};
 
 GRUB_MOD_INIT(normal)
 {
+  unsigned i;
+
+  grub_boot_time ("Preparing normal module");
+
   /* Previously many modules depended on gzio. Be nice to user and load it.  */
   grub_dl_load ("gzio");
+  grub_errno = 0;
 
   grub_normal_auth_init ();
   grub_context_init ();
@@ -515,8 +525,20 @@ GRUB_MOD_INIT(normal)
   grub_env_export ("color_highlight");
 
   /* Set default color names.  */
-  grub_env_set ("color_normal", "white/black");
-  grub_env_set ("color_highlight", "black/white");
+  grub_env_set ("color_normal", "light-gray/black");
+  grub_env_set ("color_highlight", "black/light-gray");
+
+  for (i = 0; i < ARRAY_SIZE (features); i++)
+    {
+      grub_env_set (features[i], "y");
+      grub_env_export (features[i]);
+    }
+  grub_env_set ("grub_cpu", GRUB_TARGET_CPU);
+  grub_env_export ("grub_cpu");
+  grub_env_set ("grub_platform", GRUB_PLATFORM);
+  grub_env_export ("grub_platform");
+
+  grub_boot_time ("Normal module prepared");
 }
 
 GRUB_MOD_FINI(normal)

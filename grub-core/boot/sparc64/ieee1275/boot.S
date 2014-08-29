@@ -17,7 +17,6 @@
  *  along with GRUB.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <grub/boot.h>
 #include <grub/machine/boot.h>
 
 	.text
@@ -29,9 +28,7 @@ pic_base:
 	call	boot_continue
 	 mov	%o4, CIF_REG
 
-	. = _start + GRUB_BOOT_MACHINE_VER_MAJ
-boot_version:		.byte	GRUB_BOOT_VERSION_MAJOR, GRUB_BOOT_VERSION_MINOR
-
+#ifndef CDBOOT
 	/* The offsets to these locations are defined by the
 	 * GRUB_BOOT_MACHINE_foo macros in include/grub/sparc/ieee1275/boot.h,
 	 * and grub-setup uses this to patch these next three values as needed.
@@ -44,11 +41,22 @@ boot_version:		.byte	GRUB_BOOT_VERSION_MAJOR, GRUB_BOOT_VERSION_MINOR
 	 * After loading in that block we will execute it by jumping to the
 	 * load address plus the size of the prepended A.OUT header (32 bytes).
 	 */
+	. = _start + GRUB_BOOT_MACHINE_BOOT_DEVPATH
 boot_path:
 	. = _start + GRUB_BOOT_MACHINE_KERNEL_BYTE
 boot_path_end:
 kernel_byte:		.xword (2 << 9)
 kernel_address:		.word  GRUB_BOOT_MACHINE_KERNEL_ADDR
+#else
+#define boot_path (_start + 512 + SCRATCH_PAD_BOOT_SIZE)
+#define boot_path_end (_start + 1024)
+#include <grub/offsets.h>
+
+	. = _start + 8
+kernel_byte:		.xword (2 << 9)
+kernel_size:	        .word  512
+kernel_address:		.word  GRUB_BOOT_SPARC64_IEEE1275_IMAGE_ADDRESS
+#endif
 
 prom_finddev_name:	.asciz "finddevice"
 prom_chosen_path:	.asciz "/chosen"
@@ -132,7 +140,11 @@ prom_call:
 
 boot_continue:
 	mov	%o7, PIC_REG		/* PIC base */
+#ifndef CDBOOT
 	sethi	%hi(SCRATCH_PAD_BOOT), %l1	/* OF argument slots */
+#else
+	GET_ABS(_start + 512, %l1)	/* OF argument slots */
+#endif
 
 	/* Find the /chosen node so we can fetch the stdout handle,
 	 * and thus perform console output.
@@ -161,8 +173,10 @@ boot_continue:
 	 mov	GRUB_NAME_LEN, %o3
 
 	GET_ABS(boot_path, %o3)
+#ifndef CDBOOT
 	ldub	[%o3], %o1
 	brnz,pn	%o1, bootpath_known
+#endif
 
 	/* getprop(chosen_node, "bootpath", &buffer, buffer_size) */
 	 GET_ABS(prom_bootpath_name, %o2)
@@ -197,12 +211,19 @@ bootpath_known:
 	GET_ABS(prom_read_name, %o0)
 	LDUW_ABS(kernel_address, 0x00, %o2)
 	call	prom_call_3_1_o1
+#ifdef CDBOOT
+	 LDUW_ABS(kernel_size, 0x00, %o3)
+#else
 	 mov	512, %o3
+#endif
 
 	LDUW_ABS(kernel_address, 0x00, %o2)
 	jmpl	%o2, %o7
+#ifdef CDBOOT
+	 mov	CIF_REG, %o4
+#else
 	 nop
-
+#endif
 	. = _start + GRUB_BOOT_MACHINE_CODE_END
 
 /* the last 4 bytes in the sector 0 contain the signature */

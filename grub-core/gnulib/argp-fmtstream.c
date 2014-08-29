@@ -1,5 +1,5 @@
 /* Word-wrapping and line-truncating streams
-   Copyright (C) 1997-1999, 2001-2003, 2005, 2009-2010 Free Software
+   Copyright (C) 1997-1999, 2001-2003, 2005, 2009-2013 Free Software
    Foundation, Inc.
    This file is part of the GNU C Library.
    Written by Miles Bader <miles@gnu.ai.mit.edu>.
@@ -17,7 +17,7 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-/* This package emulates glibc `line_wrap_stream' semantics for systems that
+/* This package emulates glibc 'line_wrap_stream' semantics for systems that
    don't have that.  */
 
 #ifdef HAVE_CONFIG_H
@@ -29,9 +29,11 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <ctype.h>
+#include <wchar.h>
 
 #include "argp-fmtstream.h"
 #include "argp-namefrob.h"
+#include "mbswidth.h"
 
 #ifndef ARGP_FMTSTREAM_USE_LINEWRAP
 
@@ -116,6 +118,51 @@ weak_alias (__argp_fmtstream_free, argp_fmtstream_free)
 #endif
 #endif
 
+
+/* Return the pointer to the first character that doesn't fit in l columns.  */
+static inline const ptrdiff_t
+add_width (const char *ptr, const char *end, size_t l)
+{
+  mbstate_t ps;
+  const char *ptr0 = ptr;
+
+  memset (&ps, 0, sizeof (ps));
+
+  while (ptr < end)
+    {
+      wchar_t wc;
+      size_t s, k;
+
+      s = mbrtowc (&wc, ptr, end - ptr, &ps);
+      if (s == (size_t) -1)
+	break;
+      if (s == (size_t) -2)
+	{
+	  if (1 >= l)
+	    break;
+	  l--;
+	  ptr++;
+	  continue;
+	}
+
+      if (wc == '\e' && ptr + 3 < end
+	  && ptr[1] == '[' && (ptr[2] == '0' || ptr[2] == '1')
+	  && ptr[3] == 'm')
+	{
+	  ptr += 4;
+	  continue;
+	}
+
+      k = wcwidth (wc);
+
+      if (k >= l)
+	break;
+      l -= k;
+      ptr += s;
+    }
+  return ptr - ptr0;
+}
+
 /* Process FS's buffer so that line wrapping is done from POINT_OFFS to the
    end of its buffer.  This code is mostly from glibc stdio/linewrap.c.  */
 void
@@ -168,14 +215,15 @@ __argp_fmtstream_update (argp_fmtstream_t fs)
 
       if (!nl)
         {
+	  size_t display_width = mbsnwidth (buf, fs->p - buf, MBSW_STOP_AT_NUL);
           /* The buffer ends in a partial line.  */
 
-          if (fs->point_col + len < fs->rmargin)
+          if (fs->point_col + display_width < fs->rmargin)
             {
               /* The remaining buffer text is a partial line and fits
                  within the maximum line width.  Advance point for the
                  characters to be written and stop scanning.  */
-              fs->point_col += len;
+              fs->point_col += display_width;
               break;
             }
           else
@@ -183,14 +231,18 @@ __argp_fmtstream_update (argp_fmtstream_t fs)
                the end of the buffer.  */
             nl = fs->p;
         }
-      else if (fs->point_col + (nl - buf) < (ssize_t) fs->rmargin)
-        {
-          /* The buffer contains a full line that fits within the maximum
-             line width.  Reset point and scan the next line.  */
-          fs->point_col = 0;
-          buf = nl + 1;
-          continue;
-        }
+      else
+	{
+	  size_t display_width = mbsnwidth (buf, nl - buf, MBSW_STOP_AT_NUL);
+	  if (display_width < (ssize_t) fs->rmargin)
+	    {
+	      /* The buffer contains a full line that fits within the maximum
+		 line width.  Reset point and scan the next line.  */
+	      fs->point_col = 0;
+	      buf = nl + 1;
+	      continue;
+	    }
+	}
 
       /* This line is too long.  */
       r = fs->rmargin - 1;
@@ -226,7 +278,7 @@ __argp_fmtstream_update (argp_fmtstream_t fs)
           char *p, *nextline;
           int i;
 
-          p = buf + (r + 1 - fs->point_col);
+	  p = buf + add_width (buf, fs->p, (r + 1 - fs->point_col));
           while (p >= buf && !isblank ((unsigned char) *p))
             --p;
           nextline = p + 1;     /* This will begin the next line.  */
@@ -244,7 +296,7 @@ __argp_fmtstream_update (argp_fmtstream_t fs)
             {
               /* A single word that is greater than the maximum line width.
                  Oh well.  Put it on an overlong line by itself.  */
-              p = buf + (r + 1 - fs->point_col);
+              p = buf + add_width (buf, fs->p, (r + 1 - fs->point_col));
               /* Find the end of the long word.  */
               if (p < nl)
                 do
@@ -278,7 +330,8 @@ __argp_fmtstream_update (argp_fmtstream_t fs)
               && fs->p > nextline)
             {
               /* The margin needs more blanks than we removed.  */
-              if (fs->end - fs->p > fs->wmargin + 1)
+              if (mbsnwidth (fs->p, fs->end - fs->p, MBSW_STOP_AT_NUL)
+		  > fs->wmargin + 1)
                 /* Make some space for them.  */
                 {
                   size_t mv = fs->p - nextline;

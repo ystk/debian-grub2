@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <grub/util/misc.h>
 #include <grub/misc.h>
+#include <grub/i18n.h>
 
 int
 main (int argc, char **argv)
@@ -34,19 +35,22 @@ main (int argc, char **argv)
   size_t bufsize = 0;
   char *suffix = xstrdup ("");
   int suffixlen = 0;
+  const char *out_fname = 0;
+
+  grub_util_host_init (&argc, &argv);
 
   if (argc >= 2 && argv[1][0] == '-')
     {
-      fprintf (stdout, "Usage: %s [INFILE [OUTFILE]]\n", argv[0]);
+      fprintf (stdout, _("Usage: %s [INFILE [OUTFILE]]\n"), argv[0]);
       return 0;
     }
 
   if (argc >= 2)
     {
-      in = fopen (argv[1], "r");
+      in = grub_util_fopen (argv[1], "r");
       if (!in)
 	{
-	  fprintf (stderr, "Couldn't open %s for reading: %s\n",
+	  fprintf (stderr, _("cannot open `%s': %s"),
 		   argv[1], strerror (errno));
 	  return 1;
 	}
@@ -56,15 +60,16 @@ main (int argc, char **argv)
 
   if (argc >= 3)
     {
-      out = fopen (argv[2], "w");
+      out = grub_util_fopen (argv[2], "w");
       if (!out)
 	{					
 	  if (in != stdin)
 	    fclose (in);
-	  fprintf (stderr, "Couldn't open %s for writing: %s\n",
+	  fprintf (stderr, _("cannot open `%s': %s"),
 		   argv[2], strerror (errno));
 	  return 1;
 	}
+      out_fname = argv[2];
     }
   else
     out = stdout;
@@ -79,12 +84,9 @@ main (int argc, char **argv)
       {
 	char *oldname = NULL;
 	char *newsuffix;
-	char *ptr;
-
-	for (ptr = buf; *ptr && grub_isspace (*ptr); ptr++);
 
 	oldname = entryname;
-	parsed = grub_legacy_parse (ptr, &entryname, &newsuffix);
+	parsed = grub_legacy_parse (buf, &entryname, &newsuffix);
 	if (newsuffix)
 	  {
 	    suffixlen += strlen (newsuffix);
@@ -111,7 +113,14 @@ main (int argc, char **argv)
   if (entryname)
     fprintf (out, "}\n\n");
 
-  fwrite (suffix, 1, suffixlen, out);
+  if (fwrite (suffix, 1, suffixlen, out) != suffixlen)
+    {
+      if (out_fname)
+	grub_util_error ("cannot write to `%s': %s",
+			 out_fname, strerror (errno));
+      else
+	grub_util_error ("cannot write to the stdout: %s", strerror (errno));
+    }
 
   free (buf);
   free (suffix);

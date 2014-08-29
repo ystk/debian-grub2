@@ -23,6 +23,7 @@
 #include <grub/mm.h>
 #include <grub/usb.h>
 #include <grub/usbserial.h>
+#include <grub/i18n.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -41,6 +42,7 @@ is_speed_supported (unsigned int speed)
 
 #define GRUB_PL2303_REQUEST_SET_CONFIG 0x20
 #define GRUB_PL2303_STOP_BITS_1 0x0
+#define GRUB_PL2303_STOP_BITS_1_5 0x1
 #define GRUB_PL2303_STOP_BITS_2 0x2
 
 #define GRUB_PL2303_PARITY_NONE 0
@@ -53,7 +55,7 @@ struct grub_pl2303_config
   grub_uint8_t stop_bits;
   grub_uint8_t parity;
   grub_uint8_t word_len;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 static void
 real_config (struct grub_serial_port *port)
@@ -96,6 +98,8 @@ real_config (struct grub_serial_port *port)
 
   if (port->config.stop_bits == GRUB_SERIAL_STOP_BITS_2)
     config_pl2303.stop_bits = GRUB_PL2303_STOP_BITS_2;
+  else if (port->config.stop_bits == GRUB_SERIAL_STOP_BITS_1_5)
+    config_pl2303.stop_bits = GRUB_PL2303_STOP_BITS_1_5;
   else
     config_pl2303.stop_bits = GRUB_PL2303_STOP_BITS_1;
 
@@ -121,7 +125,7 @@ real_config (struct grub_serial_port *port)
 			0x22, 3, 0, 0, 0);
 
   grub_usb_control_msg (port->usbdev, GRUB_USB_REQTYPE_VENDOR_OUT,
-			1, 0, 0x61, 0, 0);
+			1, 0, port->config.rtscts ? 0x61 : 0, 0, 0);
   port->configured = 1;
 }
 
@@ -142,7 +146,7 @@ pl2303_hw_put (struct grub_serial_port *port, const int c)
 
   real_config (port);
 
-  grub_usb_bulk_write (port->usbdev, port->out_endp->endp_addr, 1, &cc);
+  grub_usb_bulk_write (port->usbdev, port->out_endp, 1, &cc);
 }
 
 static grub_err_t
@@ -150,19 +154,24 @@ pl2303_hw_configure (struct grub_serial_port *port,
 			struct grub_serial_config *config)
 {
   if (!is_speed_supported (config->speed))
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "bad speed");
+    return grub_error (GRUB_ERR_BAD_ARGUMENT,
+		       N_("unsupported serial port speed"));
 
   if (config->parity != GRUB_SERIAL_PARITY_NONE
       && config->parity != GRUB_SERIAL_PARITY_ODD
       && config->parity != GRUB_SERIAL_PARITY_EVEN)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "unsupported parity");
+    return grub_error (GRUB_ERR_BAD_ARGUMENT,
+		       N_("unsupported serial port parity"));
 
   if (config->stop_bits != GRUB_SERIAL_STOP_BITS_1
+      && config->stop_bits != GRUB_SERIAL_STOP_BITS_1_5
       && config->stop_bits != GRUB_SERIAL_STOP_BITS_2)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "unsupported stop bits");
+    return grub_error (GRUB_ERR_BAD_ARGUMENT,
+		       N_("unsupported serial port stop bits number"));
 
   if (config->word_len < 5 || config->word_len > 8)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "unsupported word length");
+    return grub_error (GRUB_ERR_BAD_ARGUMENT,
+		       N_("unsupported serial port word length"));
 
   port->config = *config;
   port->configured = 0;
@@ -199,7 +208,9 @@ grub_pl2303_attach (grub_usb_device_t usbdev, int configno, int interfno)
     return 0;
 
   return grub_usbserial_attach (usbdev, configno, interfno,
-				&grub_pl2303_driver);
+				&grub_pl2303_driver,
+				GRUB_USB_SERIAL_ENDPOINT_LAST_MATCHING,
+				GRUB_USB_SERIAL_ENDPOINT_LAST_MATCHING);
 }
 
 static struct grub_usb_attach_desc attach_hook =

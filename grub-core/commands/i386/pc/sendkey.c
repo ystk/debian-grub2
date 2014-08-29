@@ -26,6 +26,7 @@
 #include <grub/extcmd.h>
 #include <grub/cpu/io.h>
 #include <grub/loader.h>
+#include <grub/i18n.h>
 
 GRUB_MOD_LICENSE ("GPLv2+");
 
@@ -35,23 +36,23 @@ static int keylen = 0;
 static int noled = 0;
 static const struct grub_arg_option options[] =
   {
-    {"num", 'n', 0, "set numlock mode", "[on|off]", ARG_TYPE_STRING},
-    {"caps", 'c', 0, "set capslock mode", "[on|off]", ARG_TYPE_STRING},
-    {"scroll", 's', 0, "set scrolllock mode", "[on|off]", ARG_TYPE_STRING},
-    {"insert", 0, 0, "set insert mode", "[on|off]", ARG_TYPE_STRING},
-    {"pause", 0, 0, "set pause mode", "[on|off]", ARG_TYPE_STRING},
-    {"left-shift", 0, 0, "press left shift", "[on|off]", ARG_TYPE_STRING},
-    {"right-shift", 0, 0, "press right shift", "[on|off]", ARG_TYPE_STRING},
-    {"sysrq", 0, 0, "press SysRq", "[on|off]", ARG_TYPE_STRING},
-    {"numkey", 0, 0, "press NumLock key", "[on|off]", ARG_TYPE_STRING},
-    {"capskey", 0, 0, "press CapsLock key", "[on|off]", ARG_TYPE_STRING},
-    {"scrollkey", 0, 0, "press ScrollLock key", "[on|off]", ARG_TYPE_STRING},
-    {"insertkey", 0, 0, "press Insert key", "[on|off]", ARG_TYPE_STRING},
-    {"left-alt", 0, 0, "press left alt", "[on|off]", ARG_TYPE_STRING},
-    {"right-alt", 0, 0, "press right alt", "[on|off]", ARG_TYPE_STRING},
-    {"left-ctrl", 0, 0, "press left ctrl", "[on|off]", ARG_TYPE_STRING},
-    {"right-ctrl", 0, 0, "press right ctrl", "[on|off]", ARG_TYPE_STRING},
-    {"no-led", 0, 0, "don't update LED state", 0, 0},
+    {"num", 'n', 0, N_("set numlock mode"), "[on|off]", ARG_TYPE_STRING},
+    {"caps", 'c', 0, N_("set capslock mode"), "[on|off]", ARG_TYPE_STRING},
+    {"scroll", 's', 0, N_("set scrolllock mode"), "[on|off]", ARG_TYPE_STRING},
+    {"insert", 0, 0, N_("set insert mode"), "[on|off]", ARG_TYPE_STRING},
+    {"pause", 0, 0, N_("set pause mode"), "[on|off]", ARG_TYPE_STRING},
+    {"left-shift", 0, 0, N_("press left shift"), "[on|off]", ARG_TYPE_STRING},
+    {"right-shift", 0, 0, N_("press right shift"), "[on|off]", ARG_TYPE_STRING},
+    {"sysrq", 0, 0, N_("press SysRq"), "[on|off]", ARG_TYPE_STRING},
+    {"numkey", 0, 0, N_("press NumLock key"), "[on|off]", ARG_TYPE_STRING},
+    {"capskey", 0, 0, N_("press CapsLock key"), "[on|off]", ARG_TYPE_STRING},
+    {"scrollkey", 0, 0, N_("press ScrollLock key"), "[on|off]", ARG_TYPE_STRING},
+    {"insertkey", 0, 0, N_("press Insert key"), "[on|off]", ARG_TYPE_STRING},
+    {"left-alt", 0, 0, N_("press left alt"), "[on|off]", ARG_TYPE_STRING},
+    {"right-alt", 0, 0, N_("press right alt"), "[on|off]", ARG_TYPE_STRING},
+    {"left-ctrl", 0, 0, N_("press left ctrl"), "[on|off]", ARG_TYPE_STRING},
+    {"right-ctrl", 0, 0, N_("press right ctrl"), "[on|off]", ARG_TYPE_STRING},
+    {"no-led", 0, 0, N_("don't update LED state"), 0, 0},
     {0, 0, 0, 0, 0, 0}
   };
 static int simple_flag_offsets[] 
@@ -62,8 +63,8 @@ static grub_uint32_t andmask = 0xffffffff, ormask = 0;
 struct 
 keysym
 {
-  char *unshifted_name;			/* the name in unshifted state */
-  char *shifted_name;			/* the name in shifted state */
+  const char *unshifted_name;		/* the name in unshifted state */
+  const char *shifted_name;		/* the name in shifted state */
   unsigned char unshifted_ascii;	/* the ascii code in unshifted state */
   unsigned char shifted_ascii;		/* the ascii code in shifted state */
   unsigned char keycode;		/* keyboard scancode */
@@ -285,47 +286,48 @@ grub_sendkey_preboot (int noret __attribute__ ((unused)))
   return GRUB_ERR_NONE;
 }
 
+/* Helper for grub_cmd_sendkey.  */
+static int
+find_key_code (char *key)
+{
+  unsigned i;
+
+  for (i = 0; i < sizeof (keysym_table) / sizeof (keysym_table[0]); i++)
+    {
+      if (keysym_table[i].unshifted_name 
+	  && grub_strcmp (key, keysym_table[i].unshifted_name) == 0)
+	return keysym_table[i].keycode;
+      else if (keysym_table[i].shifted_name 
+	       && grub_strcmp (key, keysym_table[i].shifted_name) == 0)
+	return keysym_table[i].keycode;
+    }
+
+  return 0;
+}
+
+/* Helper for grub_cmd_sendkey.  */
+static int
+find_ascii_code (char *key)
+{
+  unsigned i;
+
+  for (i = 0; i < sizeof (keysym_table) / sizeof (keysym_table[0]); i++)
+    {
+      if (keysym_table[i].unshifted_name 
+	  && grub_strcmp (key, keysym_table[i].unshifted_name) == 0)
+	return keysym_table[i].unshifted_ascii;
+      else if (keysym_table[i].shifted_name 
+	       && grub_strcmp (key, keysym_table[i].shifted_name) == 0)
+	return keysym_table[i].shifted_ascii;
+    }
+
+  return 0;
+}
+
 static grub_err_t
 grub_cmd_sendkey (grub_extcmd_context_t ctxt, int argc, char **args)
 {
   struct grub_arg_list *state = ctxt->state;
-
-  auto int find_key_code (char *key); 
-  auto int find_ascii_code (char *key);
-
-  int find_key_code (char *key)
-    {
-      unsigned i;
-
-      for (i = 0; i < sizeof (keysym_table) / sizeof (keysym_table[0]); i++)
-	{
-	  if (keysym_table[i].unshifted_name 
-	      && grub_strcmp (key, keysym_table[i].unshifted_name) == 0)
-	    return keysym_table[i].keycode;
-	  else if (keysym_table[i].shifted_name 
-		   && grub_strcmp (key, keysym_table[i].shifted_name) == 0)
-	    return keysym_table[i].keycode;
-	}
-
-      return 0;
-    }
-
-  int find_ascii_code (char *key)
-    {
-      unsigned i;
-
-      for (i = 0; i < sizeof (keysym_table) / sizeof (keysym_table[0]); i++)
-	{
-	  if (keysym_table[i].unshifted_name 
-	      && grub_strcmp (key, keysym_table[i].unshifted_name) == 0)
-	    return keysym_table[i].unshifted_ascii;
-	  else if (keysym_table[i].shifted_name 
-		   && grub_strcmp (key, keysym_table[i].shifted_name) == 0)
-	    return keysym_table[i].shifted_ascii;
-	}
-
-      return 0;
-    }
 
   andmask = 0xffffffff;
   ormask = 0;
@@ -364,13 +366,15 @@ grub_cmd_sendkey (grub_extcmd_context_t ctxt, int argc, char **args)
 }
 
 static grub_extcmd_t cmd;
-static void *preboot_hook;
+static struct grub_preboot *preboot_hook;
 
 GRUB_MOD_INIT (sendkey)
 {
   cmd = grub_register_extcmd ("sendkey", grub_cmd_sendkey, 0,
-			      "sendkey [KEYSTROKE1] [KEYSTROKE2] ...",
-			      "Emulate a keystroke", options);
+			      N_("[KEYSTROKE1] [KEYSTROKE2] ..."),
+			      /* TRANSLATORS: It can emulate multiple
+				 keypresses.  */
+			      N_("Emulate a keystroke sequence"), options);
 
   preboot_hook 
     = grub_loader_register_preboot_hook (grub_sendkey_preboot, 

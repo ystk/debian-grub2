@@ -41,7 +41,7 @@ grub_env_hashval (const char *s)
   return i % HASHSZ;
 }
 
-struct grub_env_var *
+static struct grub_env_var *
 grub_env_find (const char *name)
 {
   struct grub_env_var *var;
@@ -109,9 +109,6 @@ grub_env_set (const char *name, const char *val)
   if (! var)
     return grub_errno;
 
-  /* This is not necessary. But leave this for readability.  */
-  var->global = 0;
-
   var->name = grub_strdup (name);
   if (! var->name)
     goto fail;
@@ -132,7 +129,7 @@ grub_env_set (const char *name, const char *val)
   return grub_errno;
 }
 
-char *
+const char *
 grub_env_get (const char *name)
 {
   struct grub_env_var *var;
@@ -169,11 +166,10 @@ grub_env_unset (const char *name)
   grub_free (var);
 }
 
-void
-grub_env_iterate (int (*func) (struct grub_env_var *var))
+struct grub_env_var *
+grub_env_update_get_sorted (void)
 {
-  struct grub_env_sorted_var *sorted_list = 0;
-  struct grub_env_sorted_var *sorted_var;
+  struct grub_env_var *sorted_list = 0;
   int i;
 
   /* Add variables associated with this context into a sorted list.  */
@@ -183,40 +179,20 @@ grub_env_iterate (int (*func) (struct grub_env_var *var))
 
       for (var = grub_current_context->vars[i]; var; var = var->next)
 	{
-	  struct grub_env_sorted_var *p, **q;
+	  struct grub_env_var *p, **q;
 
-	  sorted_var = grub_malloc (sizeof (*sorted_var));
-	  if (! sorted_var)
-	    goto fail;
-
-	  sorted_var->var = var;
-
-	  for (q = &sorted_list, p = *q; p; q = &((*q)->next), p = *q)
+	  for (q = &sorted_list, p = *q; p; q = &((*q)->sorted_next), p = *q)
 	    {
-	      if (grub_strcmp (p->var->name, var->name) > 0)
+	      if (grub_strcmp (p->name, var->name) > 0)
 		break;
 	    }
 
-	  sorted_var->next = *q;
-	  *q = sorted_var;
+	  var->sorted_next = *q;
+	  *q = var;
 	}
     }
 
-  /* Iterate FUNC on the sorted list.  */
-  for (sorted_var = sorted_list; sorted_var; sorted_var = sorted_var->next)
-    if (func (sorted_var->var))
-      break;
-
- fail:
-
-  /* Free the sorted list.  */
-  for (sorted_var = sorted_list; sorted_var; )
-    {
-      struct grub_env_sorted_var *tmp = sorted_var->next;
-
-      grub_free (sorted_var);
-      sorted_var = tmp;
-    }
+  return sorted_list;
 }
 
 grub_err_t

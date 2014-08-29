@@ -37,9 +37,9 @@ static struct grub_parttool *parts = 0;
 static int curhandle = 0;
 static grub_dl_t mymod;
 static char helpmsg[] =
-  "Perform COMMANDS on partition.\n"
-  "Use \"parttool PARTITION help\" for the list "
-  "of available commands.";
+  N_("Perform COMMANDS on partition.\n"
+     "Use `parttool PARTITION help' for the list "
+     "of available commands.");
 
 int
 grub_parttool_register(const char *part_name,
@@ -95,6 +95,50 @@ grub_parttool_unregister (int handle)
 }
 
 static grub_err_t
+show_help (grub_device_t dev)
+{
+  int found = 0;
+  struct grub_parttool *cur;
+
+  for (cur = parts; cur; cur = cur->next)
+    if (grub_strcmp (dev->disk->partition->partmap->name, cur->name) == 0)
+      {
+	struct grub_parttool_argdesc *curarg;
+	found = 1;
+	for (curarg = cur->args; curarg->name; curarg++)
+	  {
+	    int spacing = 20;
+
+	    spacing -= grub_strlen (curarg->name);
+	    grub_printf ("%s", curarg->name);
+
+	    switch (curarg->type)
+	      {
+	      case GRUB_PARTTOOL_ARG_BOOL:
+		grub_printf ("+/-");
+		spacing -= 3;
+		break;
+
+	      case GRUB_PARTTOOL_ARG_VAL:
+		grub_xputs (_("=VAL"));
+		spacing -= 4;
+		break;
+
+	      case GRUB_PARTTOOL_ARG_END:
+		break;
+	      }
+	    while (spacing-- > 0)
+	      grub_printf (" ");
+	    grub_puts_ (curarg->desc);
+	  }
+      }
+  if (! found)
+    grub_printf_ (N_("Sorry, no parttool is available for %s\n"),
+		  dev->disk->partition->partmap->name);
+  return GRUB_ERR_NONE;
+}
+
+static grub_err_t
 grub_cmd_parttool (grub_command_t cmd __attribute__ ((unused)),
 		   int argc, char **args)
 {
@@ -104,51 +148,9 @@ grub_cmd_parttool (grub_command_t cmd __attribute__ ((unused)),
   int i, j;
   grub_err_t err = GRUB_ERR_NONE;
 
-  auto grub_err_t show_help (void);
-  grub_err_t show_help (void)
-  {
-    int found = 0;
-    for (cur = parts; cur; cur = cur->next)
-      if (grub_strcmp (dev->disk->partition->partmap->name, cur->name) == 0)
-	{
-	  struct grub_parttool_argdesc *curarg;
-	  found = 1;
-	  for (curarg = cur->args; curarg->name; curarg++)
-	    {
-	      int spacing = 20;
-
-	      spacing -= grub_strlen (curarg->name);
-	      grub_printf ("%s", curarg->name);
-
-	      switch (curarg->type)
-		{
-		case GRUB_PARTTOOL_ARG_BOOL:
-		  grub_printf ("+/-");
-		  spacing -= 3;
-		  break;
-
-		case GRUB_PARTTOOL_ARG_VAL:
-		  grub_printf ("=VAL");
-		  spacing -= 4;
-		  break;
-
-		    case GRUB_PARTTOOL_ARG_END:
-		      break;
-		}
-	      while (spacing-- > 0)
-		grub_printf (" ");
-	      grub_printf ("%s\n", curarg->desc);
-	    }
-	}
-    if (! found)
-      grub_printf ("Sorry no parttool is available for %s\n",
-		   dev->disk->partition->partmap->name);
-    return GRUB_ERR_NONE;
-  }
-
   if (argc < 1)
     {
-      grub_printf ("%s\n", helpmsg);
+      grub_puts_ (helpmsg);
       return grub_error (GRUB_ERR_BAD_ARGUMENT, "too few arguments");
     }
 
@@ -177,7 +179,7 @@ grub_cmd_parttool (grub_command_t cmd __attribute__ ((unused)),
     }
 
   /* Load modules. */
-  if (! grub_no_autoload)
+  if (! grub_no_modules)
   {
     const char *prefix;
     prefix = grub_env_get ("prefix");
@@ -185,7 +187,8 @@ grub_cmd_parttool (grub_command_t cmd __attribute__ ((unused)),
       {
 	char *filename;
 
-	filename = grub_xasprintf ("%s/parttool.lst", prefix);
+	filename = grub_xasprintf ("%s/" GRUB_TARGET_CPU "-" GRUB_PLATFORM
+				   "/parttool.lst", prefix);
 	if (filename)
 	  {
 	    grub_file_t file;
@@ -204,6 +207,8 @@ grub_cmd_parttool (grub_command_t cmd __attribute__ ((unused)),
 		      break;
 
 		    name = buf;
+		    while (grub_isspace (name[0]))
+		      name++;
 
 		    if (! grub_isgraph (name[0]))
 		      continue;
@@ -213,8 +218,9 @@ grub_cmd_parttool (grub_command_t cmd __attribute__ ((unused)),
 		      continue;
 
 		    *p = '\0';
-		    while (*++p == ' ')
-		      ;
+		    p++;
+		    while (*p == ' ' || *p == '\t')
+		      p++;
 
 		    if (! grub_isgraph (*p))
 		      continue;
@@ -237,11 +243,11 @@ grub_cmd_parttool (grub_command_t cmd __attribute__ ((unused)),
   }
 
   if (argc == 1)
-    return show_help ();
+    return show_help (dev);
 
   for (i = 1; i < argc; i++)
     if (grub_strcmp (args[i], "help") == 0)
-      return show_help ();
+      return show_help (dev);
 
   parsed = (int *) grub_zalloc (argc * sizeof (int));
 
@@ -268,7 +274,7 @@ grub_cmd_parttool (grub_command_t cmd __attribute__ ((unused)),
 		break;
 	    }
 	if (! cur)
-	  return grub_error (GRUB_ERR_BAD_ARGUMENT, "unrecognised argument %s",
+	  return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("unknown argument `%s'"),
 			     args[i]);
 	ptool = cur;
 	pargs = (struct grub_parttool_args *)

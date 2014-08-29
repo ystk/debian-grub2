@@ -34,12 +34,19 @@ GRUB_MOD_LICENSE ("GPLv3+");
 
 struct grub_acorn_boot_block
 {
-  grub_uint8_t misc[0x1C0];
-  struct grub_filecore_disc_record disc_record;
-  grub_uint8_t flags;
-  grub_uint16_t start_cylinder;
-  grub_uint8_t checksum;
-} __attribute__ ((packed, aligned));
+  union
+  {
+    struct
+    {
+      grub_uint8_t misc[0x1C0];
+      struct grub_filecore_disc_record disc_record;
+      grub_uint8_t flags;
+      grub_uint16_t start_cylinder;
+      grub_uint8_t checksum;
+    } GRUB_PACKED;
+    grub_uint8_t bin[0x200];
+  };
+} GRUB_PACKED;
 
 struct linux_part
 {
@@ -71,7 +78,7 @@ acorn_partition_map_find (grub_disk_t disk, struct linux_part *m,
     goto fail;
 
   for (i = 0; i != 0x1ff; ++i)
-    checksum = (checksum & 0xff) + (checksum >> 8) + boot.misc[i];
+    checksum = ((checksum & 0xff) + (checksum >> 8) + boot.bin[i]);
 
   if ((grub_uint8_t) checksum != boot.checksum)
     goto fail;
@@ -94,8 +101,8 @@ fail:
 
 static grub_err_t
 acorn_partition_map_iterate (grub_disk_t disk,
-			     int (*hook) (grub_disk_t disk,
-					  const grub_partition_t partition))
+			     grub_partition_iterate_hook_t hook,
+			     void *hook_data)
 {
   struct grub_partition part;
   struct linux_part map[LINUX_MAP_ENTRIES];
@@ -120,7 +127,7 @@ acorn_partition_map_iterate (grub_disk_t disk,
       part.offset = 6;
       part.number = part.index = i;
 
-      if (hook (disk, &part))
+      if (hook (disk, &part, hook_data))
 	return grub_errno;
     }
 

@@ -21,57 +21,10 @@
 #define GRUB_LVM_H	1
 
 #include <grub/types.h>
+#include <grub/diskfilter.h>
 
 /* Length of ID string, excluding terminating zero. */
 #define GRUB_LVM_ID_STRLEN 38
-
-struct grub_lvm_vg {
-  char id[GRUB_LVM_ID_STRLEN+1];
-  char *name;
-  int extent_size;
-  struct grub_lvm_pv *pvs;
-  struct grub_lvm_lv *lvs;
-  struct grub_lvm_vg *next;
-};
-
-struct grub_lvm_pv {
-  char id[GRUB_LVM_ID_STRLEN+1];
-  char *name;
-  grub_disk_t disk;
-  int start; /* Sector number where the data area starts. */
-  struct grub_lvm_pv *next;
-};
-
-struct grub_lvm_lv {
-  char *name;
-  unsigned int number;
-  unsigned int segment_count;
-  grub_uint64_t size;
-
-  int visible;
-
-  struct grub_lvm_segment *segments; /* Pointer to segment_count segments. */
-  struct grub_lvm_vg *vg;
-  struct grub_lvm_lv *next;
-};
-
-struct grub_lvm_segment {
-  unsigned int start_extent;
-  unsigned int extent_count;
-  enum { GRUB_LVM_STRIPED, GRUB_LVM_MIRROR } type; 
-
-  unsigned int node_count;
-  struct grub_lvm_node *nodes;
-
-  unsigned int stripe_size;
-};
-
-struct grub_lvm_node {
-  grub_disk_addr_t start;
-  char *name;
-  struct grub_lvm_pv *pv;
-  struct grub_lvm_lv *lv;
-};
 
 #define GRUB_LVM_LABEL_SIZE GRUB_DISK_SECTOR_SIZE
 #define GRUB_LVM_LABEL_SCAN_SECTORS 4L
@@ -88,13 +41,13 @@ struct grub_lvm_label_header {
   grub_uint32_t crc_xl;		/* From next field to end of sector */
   grub_uint32_t offset_xl;	/* Offset from start of struct to contents */
   grub_int8_t type[8];		/* LVM2 001 */
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 /* On disk */
 struct grub_lvm_disk_locn {
   grub_uint64_t offset;		/* Offset in bytes to start sector */
   grub_uint64_t size;		/* Bytes */
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 /* Fields with the suffix _xl should be xlate'd wherever they appear */
 /* On disk */
@@ -107,7 +60,7 @@ struct grub_lvm_pv_header {
   /* NULL-terminated list of data areas followed by */
   /* NULL-terminated list of metadata area headers */
   struct grub_lvm_disk_locn disk_areas_xl[0];	/* Two lists */
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 #define GRUB_LVM_FMTT_MAGIC "\040\114\126\115\062\040\170\133\065\101\045\162\060\116\052\076"
 #define GRUB_LVM_FMTT_VERSION 1
@@ -119,7 +72,7 @@ struct grub_lvm_raw_locn {
   grub_uint64_t size;		/* Bytes */
   grub_uint32_t checksum;
   grub_uint32_t filler;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 /* On disk */
 /* Structure size limited to one sector */
@@ -131,7 +84,7 @@ struct grub_lvm_mda_header {
   grub_uint64_t size;		/* Size of metadata area */
 
   struct grub_lvm_raw_locn raw_locns[0];	/* NULL-terminated list */
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 
 #endif /* ! GRUB_LVM_H */
