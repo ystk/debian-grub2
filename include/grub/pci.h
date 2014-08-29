@@ -81,8 +81,25 @@
 #define  GRUB_PCI_STATUS_DEVSEL_TIMING_SHIFT 9
 #define  GRUB_PCI_STATUS_DEVSEL_TIMING_MASK 0x0600
 #define  GRUB_PCI_CLASS_SUBCLASS_VGA  0x0300
+#define  GRUB_PCI_CLASS_SUBCLASS_USB  0x0c03
 
 #ifndef ASM_FILE
+
+enum
+  {
+    GRUB_PCI_CLASS_NETWORK = 0x02
+  };
+enum
+  {
+    GRUB_PCI_CAP_POWER_MANAGEMENT = 0x01
+  };
+
+enum
+  {
+    GRUB_PCI_VENDOR_BROADCOM = 0x14e4
+  };
+
+
 typedef grub_uint32_t grub_pci_id_t;
 
 #ifdef GRUB_MACHINE_EMU
@@ -116,13 +133,14 @@ grub_pci_get_function (grub_pci_device_t dev)
 #include <grub/cpu/pci.h>
 #endif
 
-typedef int NESTED_FUNC_ATTR (*grub_pci_iteratefunc_t)
-     (grub_pci_device_t dev, grub_pci_id_t pciid);
+typedef int (*grub_pci_iteratefunc_t)
+     (grub_pci_device_t dev, grub_pci_id_t pciid, void *data);
 
 grub_pci_address_t EXPORT_FUNC(grub_pci_make_address) (grub_pci_device_t dev,
 						       int reg);
 
-void EXPORT_FUNC(grub_pci_iterate) (grub_pci_iteratefunc_t hook);
+void EXPORT_FUNC(grub_pci_iterate) (grub_pci_iteratefunc_t hook,
+				    void *hook_data);
 
 struct grub_pci_dma_chunk;
 
@@ -131,6 +149,23 @@ struct grub_pci_dma_chunk *EXPORT_FUNC(grub_memalign_dma32) (grub_size_t align,
 void EXPORT_FUNC(grub_dma_free) (struct grub_pci_dma_chunk *ch);
 volatile void *EXPORT_FUNC(grub_dma_get_virt) (struct grub_pci_dma_chunk *ch);
 grub_uint32_t EXPORT_FUNC(grub_dma_get_phys) (struct grub_pci_dma_chunk *ch);
+
+static inline void *
+grub_dma_phys2virt (grub_uint32_t phys, struct grub_pci_dma_chunk *chunk)
+{
+  return ((grub_uint8_t *) grub_dma_get_virt (chunk)
+	  + (phys - grub_dma_get_phys (chunk)));
+}
+
+static inline grub_uint32_t
+grub_dma_virt2phys (volatile void *virt, struct grub_pci_dma_chunk *chunk)
+{
+  return (((grub_uint8_t *) virt - (grub_uint8_t *) grub_dma_get_virt (chunk))
+	  + grub_dma_get_phys (chunk));
+}
+
+grub_uint8_t
+EXPORT_FUNC (grub_pci_find_capability) (grub_pci_device_t dev, grub_uint8_t cap);
 
 #endif
 

@@ -31,8 +31,24 @@ struct grub_video_fbblit_info
   grub_uint8_t *data;
 };
 
-grub_uint8_t *grub_video_fb_get_video_ptr (struct grub_video_fbblit_info *source,
-                            unsigned int x, unsigned int y);
+/* Don't use for 1-bit bitmaps, addressing needs to be done at the bit level
+   and it doesn't make sense, in general, to ask for a pointer
+   to a particular pixel's data.  */
+static inline void *
+grub_video_fb_get_video_ptr (struct grub_video_fbblit_info *source,
+              unsigned int x, unsigned int y)
+{
+  return source->data + y * source->mode_info->pitch + x * source->mode_info->bytes_per_pixel;
+}
+
+/* Advance pointer by VAL bytes. If there is no unaligned access available,
+   VAL has to be divisible by size of pointed type.
+ */
+#ifdef GRUB_HAVE_UNALIGNED_ACCESS
+#define GRUB_VIDEO_FB_ADVANCE_POINTER(ptr, val) ((ptr) = (typeof (ptr)) ((char *) ptr + val))
+#else
+#define GRUB_VIDEO_FB_ADVANCE_POINTER(ptr, val) ((ptr) += (val) / sizeof (*(ptr)))
+#endif
 
 grub_video_color_t get_pixel (struct grub_video_fbblit_info *source,
                               unsigned int x, unsigned int y);

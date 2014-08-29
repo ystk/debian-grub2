@@ -27,6 +27,7 @@
 
 #define	SCRATCH_PAD_BOOT		0x5000
 #define	SCRATCH_PAD_DISKBOOT		0x4000
+#define	SCRATCH_PAD_BOOT_SIZE		0x110
 
 #define GET_ABS(symbol, reg)	\
 	add	PIC_REG, (symbol - pic_base), reg
@@ -39,9 +40,7 @@
 
 #define GRUB_BOOT_MACHINE_SIGNATURE	0xbb44aa55
 
-#define GRUB_BOOT_MACHINE_VER_MAJ	0x08
-
-#define GRUB_BOOT_MACHINE_BOOT_DEVPATH	0x0a
+#define GRUB_BOOT_MACHINE_BOOT_DEVPATH	0x08
 
 #define GRUB_BOOT_MACHINE_BOOT_DEVPATH_END 0x80
 
@@ -58,7 +57,7 @@ struct grub_boot_blocklist
 {
   grub_uint64_t start;
   grub_uint32_t len;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 #endif
 
 #endif /* ! BOOT_MACHINE_HEADER */

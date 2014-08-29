@@ -35,7 +35,7 @@
 #include <grub/video.h>
 
 /* Generic replacing blitter (slow).  Works for every supported format.  */
-void
+static void
 grub_video_fbblit_replace (struct grub_video_fbblit_info *dst,
 			   struct grub_video_fbblit_info *src,
 			   int x, int y, int width, int height,
@@ -68,7 +68,7 @@ grub_video_fbblit_replace (struct grub_video_fbblit_info *dst,
 }
 
 /* Block copy replacing blitter.  Works with modes multiple of 8 bits.  */
-void
+static void
 grub_video_fbblit_replace_directN (struct grub_video_fbblit_info *dst,
 				   struct grub_video_fbblit_info *src,
 				   int x, int y, int width, int height,
@@ -80,18 +80,19 @@ grub_video_fbblit_replace_directN (struct grub_video_fbblit_info *dst,
   int bpp;
 
   bpp = src->mode_info->bytes_per_pixel;
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   for (j = 0; j < height; j++)
     {
-      srcptr = (grub_uint32_t *)grub_video_fb_get_video_ptr (src, offset_x, j + offset_y);
-      dstptr = (grub_uint32_t *)grub_video_fb_get_video_ptr (dst, x, y + j);
-
       grub_memmove (dstptr, srcptr, width * bpp);
+      GRUB_VIDEO_FB_ADVANCE_POINTER (srcptr, src->mode_info->pitch);
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dst->mode_info->pitch);
     }
 }
 
 /* Optimized replacing blitter for 1-bit to 32bit.  */
-void
+static void
 grub_video_fbblit_replace_32bit_1bit (struct grub_video_fbblit_info *dst,
 				      struct grub_video_fbblit_info *src,
 				      int x, int y,
@@ -101,7 +102,7 @@ grub_video_fbblit_replace_32bit_1bit (struct grub_video_fbblit_info *dst,
   int i;
   int j;
   grub_uint8_t *srcptr;
-  grub_uint8_t *dstptr;
+  grub_uint32_t *dstptr;
   grub_uint8_t srcmask;
   unsigned int dstrowskip;
   unsigned int srcrowskipbyte, srcrowskipbit;
@@ -117,7 +118,7 @@ grub_video_fbblit_replace_32bit_1bit (struct grub_video_fbblit_info *dst,
   bit_index = offset_y * src->mode_info->width + offset_x;
   srcptr = (grub_uint8_t *) src->data + (bit_index >> 3);
   srcmask = 1 << (~bit_index & 7);
-  dstptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (dst, x, y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   fgcolor = grub_video_fb_map_rgba (src->mode_info->fg_red,
 				    src->mode_info->fg_green,
@@ -134,9 +135,9 @@ grub_video_fbblit_replace_32bit_1bit (struct grub_video_fbblit_info *dst,
       for (i = 0; i < width; i++)
         {
 	  if (*srcptr & srcmask)
-	    *(grub_uint32_t *) dstptr = fgcolor;
+	    *dstptr = fgcolor;
 	  else
-	    *(grub_uint32_t *) dstptr = bgcolor;
+	    *dstptr = bgcolor;
 	  srcmask >>= 1;
 	  if (!srcmask)
 	    {
@@ -144,7 +145,7 @@ grub_video_fbblit_replace_32bit_1bit (struct grub_video_fbblit_info *dst,
 	      srcmask = 0x80;
 	    }
 
-	  dstptr += 4;
+	  dstptr++;
         }
 
       srcptr += srcrowskipbyte;
@@ -155,13 +156,14 @@ grub_video_fbblit_replace_32bit_1bit (struct grub_video_fbblit_info *dst,
 	  srcptr++;
 	  srcmask <<= 8 - srcrowskipbit;
 	}
-      dstptr += dstrowskip;
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
     }
 }
 
 
+#ifdef GRUB_HAVE_UNALIGNED_ACCESS
 /* Optimized replacing blitter for 1-bit to 24-bit.  */
-void
+static void
 grub_video_fbblit_replace_24bit_1bit (struct grub_video_fbblit_info *dst,
 				      struct grub_video_fbblit_info *src,
 				      int x, int y,
@@ -187,7 +189,7 @@ grub_video_fbblit_replace_24bit_1bit (struct grub_video_fbblit_info *dst,
   bit_index = offset_y * src->mode_info->width + offset_x;
   srcptr = (grub_uint8_t *) src->data + (bit_index >> 3);
   srcmask = 1 << (~bit_index & 7);
-  dstptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (dst, x, y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   fgcolor = grub_video_fb_map_rgba (src->mode_info->fg_red,
 				    src->mode_info->fg_green,
@@ -247,9 +249,10 @@ grub_video_fbblit_replace_24bit_1bit (struct grub_video_fbblit_info *dst,
       dstptr += dstrowskip;
     }
 }
+#endif
 
 /* Optimized replacing blitter for 1-bit to 16-bit.  */
-void
+static void
 grub_video_fbblit_replace_16bit_1bit (struct grub_video_fbblit_info *dst,
 				      struct grub_video_fbblit_info *src,
 				      int x, int y,
@@ -259,7 +262,7 @@ grub_video_fbblit_replace_16bit_1bit (struct grub_video_fbblit_info *dst,
   int i;
   int j;
   grub_uint8_t *srcptr;
-  grub_uint8_t *dstptr;
+  grub_uint16_t *dstptr;
   grub_uint8_t srcmask;
   unsigned int dstrowskip;
   unsigned int srcrowskipbyte, srcrowskipbit;
@@ -275,7 +278,7 @@ grub_video_fbblit_replace_16bit_1bit (struct grub_video_fbblit_info *dst,
   bit_index = offset_y * src->mode_info->width + offset_x;
   srcptr = (grub_uint8_t *) src->data + (bit_index >> 3);
   srcmask = 1 << (~bit_index & 7);
-  dstptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (dst, x, y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   fgcolor = grub_video_fb_map_rgba (src->mode_info->fg_red,
 				    src->mode_info->fg_green,
@@ -292,9 +295,9 @@ grub_video_fbblit_replace_16bit_1bit (struct grub_video_fbblit_info *dst,
       for (i = 0; i < width; i++)
         {
 	  if (*srcptr & srcmask)
-	    *(grub_uint16_t *) dstptr = fgcolor;
+	    *dstptr = fgcolor;
 	  else
-	    *(grub_uint16_t *) dstptr = bgcolor;
+	    *dstptr = bgcolor;
 	  srcmask >>= 1;
 	  if (!srcmask)
 	    {
@@ -302,7 +305,7 @@ grub_video_fbblit_replace_16bit_1bit (struct grub_video_fbblit_info *dst,
 	      srcmask = 0x80;
 	    }
 
-	  dstptr += 2;
+	  dstptr++;
         }
 
       srcptr += srcrowskipbyte;
@@ -313,12 +316,12 @@ grub_video_fbblit_replace_16bit_1bit (struct grub_video_fbblit_info *dst,
 	  srcptr++;
 	  srcmask <<= 8 - srcrowskipbit;
 	}
-      dstptr += dstrowskip;
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
     }
 }
 
 /* Optimized replacing blitter for 1-bit to 8-bit.  */
-void
+static void
 grub_video_fbblit_replace_8bit_1bit (struct grub_video_fbblit_info *dst,
 				      struct grub_video_fbblit_info *src,
 				      int x, int y,
@@ -344,7 +347,7 @@ grub_video_fbblit_replace_8bit_1bit (struct grub_video_fbblit_info *dst,
   bit_index = offset_y * src->mode_info->width + offset_x;
   srcptr = (grub_uint8_t *) src->data + (bit_index >> 3);
   srcmask = 1 << (~bit_index & 7);
-  dstptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (dst, x, y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   fgcolor = grub_video_fb_map_rgba (src->mode_info->fg_red,
 				    src->mode_info->fg_green,
@@ -361,9 +364,9 @@ grub_video_fbblit_replace_8bit_1bit (struct grub_video_fbblit_info *dst,
       for (i = 0; i < width; i++)
         {
 	  if (*srcptr & srcmask)
-	    *(grub_uint8_t *) dstptr = fgcolor;
+	    *dstptr = fgcolor;
 	  else
-	    *(grub_uint8_t *) dstptr = bgcolor;
+	    *dstptr = bgcolor;
 	  srcmask >>= 1;
 	  if (!srcmask)
 	    {
@@ -386,8 +389,378 @@ grub_video_fbblit_replace_8bit_1bit (struct grub_video_fbblit_info *dst,
     }
 }
 
+static void
+grub_video_fbblit_replace_32bit_indexa (struct grub_video_fbblit_info *dst,
+					struct grub_video_fbblit_info *src,
+					int x, int y,
+					int width, int height,
+					int offset_x, int offset_y)
+{
+  int i;
+  int j;
+  grub_uint8_t *srcptr;
+  grub_uint32_t *dstptr;
+  unsigned int dstrowskip;
+  unsigned int srcrowskip;
+  grub_uint32_t palette[17];
+
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
+
+  /* Calculate the number of bytes to advance from the end of one line
+     to the beginning of the next line.  */
+  dstrowskip = dst->mode_info->pitch - dst->mode_info->bytes_per_pixel * width;
+  srcrowskip = src->mode_info->pitch - width;
+
+  for (i = 0; i < 16; i++)
+    palette[i] = grub_video_fb_map_color (i);
+  palette[16] = grub_video_fb_map_rgba (0, 0, 0, 0);
+
+  for (j = 0; j < height; j++)
+    {
+      for (i = 0; i < width; i++)
+        {
+	  if (*srcptr == 0xf0)
+	    *dstptr = palette[16];
+	  else
+	    *dstptr = palette[*srcptr & 0xf];
+	  srcptr++;
+	  dstptr++;
+        }
+
+      srcptr += srcrowskip;
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
+    }
+}
+
+/* Optimized replacing blitter for 1-bit to 16bit.  */
+static void
+grub_video_fbblit_replace_24bit_indexa (struct grub_video_fbblit_info *dst,
+					struct grub_video_fbblit_info *src,
+					int x, int y,
+					int width, int height,
+					int offset_x, int offset_y)
+{
+  int i;
+  int j;
+  grub_uint8_t *srcptr;
+  grub_uint8_t *dstptr;
+  unsigned int dstrowskip;
+  unsigned int srcrowskip;
+  grub_uint32_t palette[17];
+
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
+
+  /* Calculate the number of bytes to advance from the end of one line
+     to the beginning of the next line.  */
+  dstrowskip = dst->mode_info->pitch - dst->mode_info->bytes_per_pixel * width;
+  srcrowskip = src->mode_info->pitch - width;
+
+  for (i = 0; i < 16; i++)
+    palette[i] = grub_video_fb_map_color (i);
+  palette[16] = grub_video_fb_map_rgba (0, 0, 0, 0);
+
+  for (j = 0; j < height; j++)
+    {
+      for (i = 0; i < width; i++)
+        {
+	  register grub_uint32_t col;
+	  if (*srcptr == 0xf0)	      
+	    col = palette[16];
+	  else
+	    col = palette[*srcptr & 0xf];
+#ifdef GRUB_CPU_WORDS_BIGENDIAN
+	  *dstptr++ = col >> 16;
+	  *dstptr++ = col >> 8;
+	  *dstptr++ = col >> 0;
+#else
+	  *dstptr++ = col >> 0;
+	  *dstptr++ = col >> 8;
+	  *dstptr++ = col >> 16;
+#endif	  
+	  srcptr++;
+        }
+
+      srcptr += srcrowskip;
+      dstptr += dstrowskip;
+    }
+}
+
+/* Optimized replacing blitter for 1-bit to 16bit.  */
+static void
+grub_video_fbblit_replace_16bit_indexa (struct grub_video_fbblit_info *dst,
+					struct grub_video_fbblit_info *src,
+					int x, int y,
+					int width, int height,
+					int offset_x, int offset_y)
+{
+  int i;
+  int j;
+  grub_uint8_t *srcptr;
+  grub_uint16_t *dstptr;
+  unsigned int dstrowskip;
+  unsigned int srcrowskip;
+  grub_uint16_t palette[17];
+
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
+
+  /* Calculate the number of bytes to advance from the end of one line
+     to the beginning of the next line.  */
+  dstrowskip = dst->mode_info->pitch - dst->mode_info->bytes_per_pixel * width;
+  srcrowskip = src->mode_info->pitch - width;
+
+  for (i = 0; i < 16; i++)
+    palette[i] = grub_video_fb_map_color (i);
+  palette[16] = grub_video_fb_map_rgba (0, 0, 0, 0);
+
+  for (j = 0; j < height; j++)
+    {
+      for (i = 0; i < width; i++)
+        {
+	  if (*srcptr == 0xf0)
+	    *dstptr = palette[16];
+	  else
+	    *dstptr = palette[*srcptr & 0xf];
+	  srcptr++;
+	  dstptr++;
+        }
+
+      srcptr += srcrowskip;
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
+    }
+}
+
+/* Optimized replacing blitter for 1-bit to 8bit.  */
+static void
+grub_video_fbblit_replace_8bit_indexa (struct grub_video_fbblit_info *dst,
+					struct grub_video_fbblit_info *src,
+					int x, int y,
+					int width, int height,
+					int offset_x, int offset_y)
+{
+  int i;
+  int j;
+  grub_uint8_t *srcptr;
+  grub_uint8_t *dstptr;
+  unsigned int dstrowskip;
+  unsigned int srcrowskip;
+  grub_uint8_t palette[17];
+
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
+
+  /* Calculate the number of bytes to advance from the end of one line
+     to the beginning of the next line.  */
+  dstrowskip = dst->mode_info->pitch - dst->mode_info->bytes_per_pixel * width;
+  srcrowskip = src->mode_info->pitch - width;
+
+  for (i = 0; i < 16; i++)
+    palette[i] = grub_video_fb_map_color (i);
+  palette[16] = grub_video_fb_map_rgba (0, 0, 0, 0);
+
+  for (j = 0; j < height; j++)
+    {
+      for (i = 0; i < width; i++)
+        {
+	  if (*srcptr == 0xf0)
+	    *dstptr = palette[16];
+	  else
+	    *dstptr = palette[*srcptr & 0xf];
+	  srcptr++;
+	  dstptr++;
+        }
+
+      srcptr += srcrowskip;
+      dstptr += dstrowskip;
+    }
+}
+
+
+static void
+grub_video_fbblit_blend_32bit_indexa (struct grub_video_fbblit_info *dst,
+					struct grub_video_fbblit_info *src,
+					int x, int y,
+					int width, int height,
+					int offset_x, int offset_y)
+{
+  int i;
+  int j;
+  grub_uint8_t *srcptr;
+  grub_uint32_t *dstptr;
+  unsigned int dstrowskip;
+  unsigned int srcrowskip;
+  grub_uint32_t palette[16];
+
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
+
+  /* Calculate the number of bytes to advance from the end of one line
+     to the beginning of the next line.  */
+  dstrowskip = dst->mode_info->pitch - dst->mode_info->bytes_per_pixel * width;
+  srcrowskip = src->mode_info->pitch - width;
+
+  for (i = 0; i < 16; i++)
+    palette[i] = grub_video_fb_map_color (i);
+
+  for (j = 0; j < height; j++)
+    {
+      for (i = 0; i < width; i++)
+        {
+	  if (*srcptr != 0xf0)
+	    *dstptr = palette[*srcptr & 0xf];
+	  srcptr++;
+	  dstptr++;
+        }
+
+      srcptr += srcrowskip;
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
+    }
+}
+
+/* Optimized replacing blitter for 1-bit to 16bit.  */
+static void
+grub_video_fbblit_blend_24bit_indexa (struct grub_video_fbblit_info *dst,
+					struct grub_video_fbblit_info *src,
+					int x, int y,
+					int width, int height,
+					int offset_x, int offset_y)
+{
+  int i;
+  int j;
+  grub_uint8_t *srcptr;
+  grub_uint8_t *dstptr;
+  unsigned int dstrowskip;
+  unsigned int srcrowskip;
+  grub_uint32_t palette[16];
+
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
+
+  /* Calculate the number of bytes to advance from the end of one line
+     to the beginning of the next line.  */
+  dstrowskip = dst->mode_info->pitch - dst->mode_info->bytes_per_pixel * width;
+  srcrowskip = src->mode_info->pitch - width;
+
+  for (i = 0; i < 16; i++)
+    palette[i] = grub_video_fb_map_color (i);
+
+  for (j = 0; j < height; j++)
+    {
+      for (i = 0; i < width; i++)
+        {
+	  register grub_uint32_t col;
+	  if (*srcptr != 0xf0)	      
+	    {
+	      col = palette[*srcptr & 0xf];
+#ifdef GRUB_CPU_WORDS_BIGENDIAN
+	      *dstptr++ = col >> 16;
+	      *dstptr++ = col >> 8;
+	      *dstptr++ = col >> 0;
+#else
+	      *dstptr++ = col >> 0;
+	      *dstptr++ = col >> 8;
+	      *dstptr++ = col >> 16;
+#endif	  
+	    }
+	  else
+	    dstptr += 3;
+	  srcptr++;
+        }
+
+      srcptr += srcrowskip;
+      dstptr += dstrowskip;
+    }
+}
+
+/* Optimized replacing blitter for 1-bit to 16bit.  */
+static void
+grub_video_fbblit_blend_16bit_indexa (struct grub_video_fbblit_info *dst,
+					struct grub_video_fbblit_info *src,
+					int x, int y,
+					int width, int height,
+					int offset_x, int offset_y)
+{
+  int i;
+  int j;
+  grub_uint8_t *srcptr;
+  grub_uint16_t *dstptr;
+  unsigned int dstrowskip;
+  unsigned int srcrowskip;
+  grub_uint16_t palette[17];
+
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
+
+  /* Calculate the number of bytes to advance from the end of one line
+     to the beginning of the next line.  */
+  dstrowskip = dst->mode_info->pitch - dst->mode_info->bytes_per_pixel * width;
+  srcrowskip = src->mode_info->pitch - width;
+
+  for (i = 0; i < 16; i++)
+    palette[i] = grub_video_fb_map_color (i);
+
+  for (j = 0; j < height; j++)
+    {
+      for (i = 0; i < width; i++)
+        {
+	  if (*srcptr != 0xf0)
+	    *dstptr = palette[*srcptr & 0xf];
+	  srcptr++;
+	  dstptr++;
+        }
+
+      srcptr += srcrowskip;
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
+    }
+}
+
+/* Optimized replacing blitter for 1-bit to 8bit.  */
+static void
+grub_video_fbblit_blend_8bit_indexa (struct grub_video_fbblit_info *dst,
+					struct grub_video_fbblit_info *src,
+					int x, int y,
+					int width, int height,
+					int offset_x, int offset_y)
+{
+  int i;
+  int j;
+  grub_uint8_t *srcptr;
+  grub_uint8_t *dstptr;
+  unsigned int dstrowskip;
+  unsigned int srcrowskip;
+  grub_uint8_t palette[16];
+
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
+
+  /* Calculate the number of bytes to advance from the end of one line
+     to the beginning of the next line.  */
+  dstrowskip = dst->mode_info->pitch - dst->mode_info->bytes_per_pixel * width;
+  srcrowskip = src->mode_info->pitch - width;
+
+  for (i = 0; i < 16; i++)
+    palette[i] = grub_video_fb_map_color (i);
+
+  for (j = 0; j < height; j++)
+    {
+      for (i = 0; i < width; i++)
+        {
+	  if (*srcptr != 0xf0)
+	    *dstptr = palette[*srcptr & 0xf];
+	  srcptr++;
+	  dstptr++;
+        }
+
+      srcptr += srcrowskip;
+      dstptr += dstrowskip;
+    }
+}
+
+
 /* Optimized replacing blitter for RGBX8888 to BGRX8888.  */
-void
+static void
 grub_video_fbblit_replace_BGRX8888_RGBX8888 (struct grub_video_fbblit_info *dst,
 					     struct grub_video_fbblit_info *src,
 					     int x, int y,
@@ -406,22 +779,32 @@ grub_video_fbblit_replace_BGRX8888_RGBX8888 (struct grub_video_fbblit_info *dst,
   srcrowskip = src->mode_info->pitch - src->mode_info->bytes_per_pixel * width;
   dstrowskip = dst->mode_info->pitch - dst->mode_info->bytes_per_pixel * width;
 
-  srcptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (src, offset_x, offset_y);
-  dstptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (dst, x, y);
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   for (j = 0; j < height; j++)
     {
       for (i = 0; i < width; i++)
         {
+#ifdef GRUB_CPU_WORDS_BIGENDIAN
+          grub_uint8_t a = *srcptr++;
+#endif
           grub_uint8_t r = *srcptr++;
           grub_uint8_t g = *srcptr++;
           grub_uint8_t b = *srcptr++;
+#ifndef GRUB_CPU_WORDS_BIGENDIAN
           grub_uint8_t a = *srcptr++;
+#endif
 
+#ifdef GRUB_CPU_WORDS_BIGENDIAN
+          *dstptr++ = a;
+#endif
           *dstptr++ = b;
           *dstptr++ = g;
           *dstptr++ = r;
+#ifndef GRUB_CPU_WORDS_BIGENDIAN
           *dstptr++ = a;
+#endif
         }
 
       srcptr += srcrowskip;
@@ -430,7 +813,7 @@ grub_video_fbblit_replace_BGRX8888_RGBX8888 (struct grub_video_fbblit_info *dst,
 }
 
 /* Optimized replacing blitter for RGB888 to BGRX8888.  */
-void
+static void
 grub_video_fbblit_replace_BGRX8888_RGB888 (struct grub_video_fbblit_info *dst,
 					   struct grub_video_fbblit_info *src,
 					   int x, int y,
@@ -449,8 +832,8 @@ grub_video_fbblit_replace_BGRX8888_RGB888 (struct grub_video_fbblit_info *dst,
   srcrowskip = src->mode_info->pitch - src->mode_info->bytes_per_pixel * width;
   dstrowskip = dst->mode_info->pitch - dst->mode_info->bytes_per_pixel * width;
 
-  srcptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (src, offset_x, offset_y);
-  dstptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (dst, x, y);
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   for (j = 0; j < height; j++)
     {
@@ -460,12 +843,19 @@ grub_video_fbblit_replace_BGRX8888_RGB888 (struct grub_video_fbblit_info *dst,
           grub_uint8_t g = *srcptr++;
           grub_uint8_t b = *srcptr++;
 
+#ifdef GRUB_CPU_WORDS_BIGENDIAN
+          /* Set alpha component as opaque.  */
+          *dstptr++ = 255;
+#endif
+
           *dstptr++ = b;
           *dstptr++ = g;
           *dstptr++ = r;
 
+#ifndef GRUB_CPU_WORDS_BIGENDIAN
           /* Set alpha component as opaque.  */
           *dstptr++ = 255;
+#endif
         }
 
       srcptr += srcrowskip;
@@ -474,7 +864,7 @@ grub_video_fbblit_replace_BGRX8888_RGB888 (struct grub_video_fbblit_info *dst,
 }
 
 /* Optimized replacing blitter for RGBX8888 to BGR888.  */
-void
+static void
 grub_video_fbblit_replace_BGR888_RGBX8888 (struct grub_video_fbblit_info *dst,
 					   struct grub_video_fbblit_info *src,
 					   int x, int y,
@@ -493,8 +883,8 @@ grub_video_fbblit_replace_BGR888_RGBX8888 (struct grub_video_fbblit_info *dst,
   srcrowskip = src->mode_info->pitch - src->mode_info->bytes_per_pixel * width;
   dstrowskip = dst->mode_info->pitch - dst->mode_info->bytes_per_pixel * width;
 
-  srcptr = (grub_uint32_t *) grub_video_fb_get_video_ptr (src, offset_x, offset_y);
-  dstptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (dst, x, y);
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   for (j = 0; j < height; j++)
     {
@@ -511,18 +901,24 @@ grub_video_fbblit_replace_BGR888_RGBX8888 (struct grub_video_fbblit_info *dst,
           sg = (color >> 8) & 0xFF;
           sb = (color >> 16) & 0xFF;
 
+#ifdef GRUB_CPU_WORDS_BIGENDIAN
+          *dstptr++ = sr;
+          *dstptr++ = sg;
+          *dstptr++ = sb;
+#else
           *dstptr++ = sb;
           *dstptr++ = sg;
           *dstptr++ = sr;
+#endif
         }
 
-      srcptr = (grub_uint32_t *) (((grub_uint8_t *) srcptr) + srcrowskip);
+      GRUB_VIDEO_FB_ADVANCE_POINTER (srcptr, srcrowskip);
       dstptr += dstrowskip;
     }
 }
 
 /* Optimized replacing blitter for RGB888 to BGR888.  */
-void
+static void
 grub_video_fbblit_replace_BGR888_RGB888 (struct grub_video_fbblit_info *dst,
 					 struct grub_video_fbblit_info *src,
 					 int x, int y,
@@ -541,8 +937,8 @@ grub_video_fbblit_replace_BGR888_RGB888 (struct grub_video_fbblit_info *dst,
   srcrowskip = src->mode_info->pitch - src->mode_info->bytes_per_pixel * width;
   dstrowskip = dst->mode_info->pitch - dst->mode_info->bytes_per_pixel * width;
 
-  srcptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (src, offset_x, offset_y);
-  dstptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (dst, x, y);
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   for (j = 0; j < height; j++)
     {
@@ -563,7 +959,7 @@ grub_video_fbblit_replace_BGR888_RGB888 (struct grub_video_fbblit_info *dst,
 }
 
 /* Optimized replacing blitter for RGB888 to RGBX8888.  */
-void
+static void
 grub_video_fbblit_replace_RGBX8888_RGB888 (struct grub_video_fbblit_info *dst,
 					   struct grub_video_fbblit_info *src,
 					   int x, int y,
@@ -578,28 +974,39 @@ grub_video_fbblit_replace_RGBX8888_RGB888 (struct grub_video_fbblit_info *dst,
   unsigned int sr;
   unsigned int sg;
   unsigned int sb;
+  grub_size_t srcrowskip;
+  grub_size_t dstrowskip;
+
+  srcrowskip = src->mode_info->pitch - 3 * width;
+  dstrowskip = dst->mode_info->pitch - 4 * width;
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   for (j = 0; j < height; j++)
     {
-      srcptr = (grub_uint8_t *)grub_video_fb_get_video_ptr (src, offset_x, j + offset_y);
-      dstptr = (grub_uint32_t *)grub_video_fb_get_video_ptr (dst, x, y + j);
-
       for (i = 0; i < width; i++)
         {
+#ifdef GRUB_CPU_WORDS_BIGENDIAN
+          sb = *srcptr++;
+          sg = *srcptr++;
+          sr = *srcptr++;
+#else
           sr = *srcptr++;
           sg = *srcptr++;
           sb = *srcptr++;
-
+#endif
           /* Set alpha as opaque.  */
           color = 0xFF000000 | (sb << 16) | (sg << 8) | sr;
 
           *dstptr++ = color;
         }
+      GRUB_VIDEO_FB_ADVANCE_POINTER (srcptr, srcrowskip);
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
     }
 }
 
 /* Optimized replacing blitter for RGBX8888 to RGB888.  */
-void
+static void
 grub_video_fbblit_replace_RGB888_RGBX8888 (struct grub_video_fbblit_info *dst,
 					   struct grub_video_fbblit_info *src,
 					   int x, int y,
@@ -614,12 +1021,16 @@ grub_video_fbblit_replace_RGB888_RGBX8888 (struct grub_video_fbblit_info *dst,
   unsigned int sr;
   unsigned int sg;
   unsigned int sb;
+  grub_size_t srcrowskip;
+  grub_size_t dstrowskip;
+
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
+  srcrowskip = src->mode_info->pitch - 4 * width;
+  dstrowskip = dst->mode_info->pitch - 3 * width;
 
   for (j = 0; j < height; j++)
     {
-      srcptr = (grub_uint32_t *)grub_video_fb_get_video_ptr (src, offset_x, j + offset_y);
-      dstptr = (grub_uint8_t *)grub_video_fb_get_video_ptr (dst, x, y + j);
-
       for (i = 0; i < width; i++)
 	{
 	  color = *srcptr++;
@@ -628,15 +1039,23 @@ grub_video_fbblit_replace_RGB888_RGBX8888 (struct grub_video_fbblit_info *dst,
 	  sg = (color >> 8) & 0xFF;
 	  sb = (color >> 16) & 0xFF;
 
+#ifndef GRUB_CPU_WORDS_BIGENDIAN
 	  *dstptr++ = sr;
 	  *dstptr++ = sg;
 	  *dstptr++ = sb;
+#else
+	  *dstptr++ = sb;
+	  *dstptr++ = sg;
+	  *dstptr++ = sr;
+#endif
 	}
+      GRUB_VIDEO_FB_ADVANCE_POINTER (srcptr, srcrowskip);
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
     }
 }
 
 /* Optimized replacing blitter for RGBX8888 to indexed color.  */
-void
+static void
 grub_video_fbblit_replace_index_RGBX8888 (struct grub_video_fbblit_info *dst,
 					  struct grub_video_fbblit_info *src,
 					  int x, int y,
@@ -651,12 +1070,17 @@ grub_video_fbblit_replace_index_RGBX8888 (struct grub_video_fbblit_info *dst,
   unsigned int sr;
   unsigned int sg;
   unsigned int sb;
+  grub_size_t srcrowskip;
+  grub_size_t dstrowskip;
+
+  srcrowskip = src->mode_info->pitch - 4 * width;
+  dstrowskip = dst->mode_info->pitch - width;
+
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   for (j = 0; j < height; j++)
     {
-      srcptr = (grub_uint32_t *)grub_video_fb_get_video_ptr (src, offset_x, j + offset_y);
-      dstptr = (grub_uint8_t *)grub_video_fb_get_video_ptr (dst, x, y + j);
-
       for (i = 0; i < width; i++)
 	{
 	  color = *srcptr++;
@@ -668,11 +1092,13 @@ grub_video_fbblit_replace_index_RGBX8888 (struct grub_video_fbblit_info *dst,
 	  color = grub_video_fb_map_rgb(sr, sg, sb);
 	  *dstptr++ = color & 0xFF;
 	}
+      GRUB_VIDEO_FB_ADVANCE_POINTER (srcptr, srcrowskip);
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
     }
 }
 
 /* Optimized replacing blitter for RGB888 to indexed color.  */
-void
+static void
 grub_video_fbblit_replace_index_RGB888 (struct grub_video_fbblit_info *dst,
 					struct grub_video_fbblit_info *src,
 					int x, int y,
@@ -687,27 +1113,40 @@ grub_video_fbblit_replace_index_RGB888 (struct grub_video_fbblit_info *dst,
   unsigned int sr;
   unsigned int sg;
   unsigned int sb;
+  grub_size_t srcrowskip;
+  grub_size_t dstrowskip;
+
+  srcrowskip = src->mode_info->pitch - 3 * width;
+  dstrowskip = dst->mode_info->pitch - width;
+
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   for (j = 0; j < height; j++)
     {
-      srcptr = (grub_uint8_t *)grub_video_fb_get_video_ptr (src, offset_x, j + offset_y);
-      dstptr = (grub_uint8_t *)grub_video_fb_get_video_ptr (dst, x, y + j);
-
       for (i = 0; i < width; i++)
         {
+#ifndef GRUB_CPU_WORDS_BIGENDIAN
           sr = *srcptr++;
           sg = *srcptr++;
           sb = *srcptr++;
+#else
+          sb = *srcptr++;
+          sg = *srcptr++;
+          sr = *srcptr++;
+#endif
 
           color = grub_video_fb_map_rgb(sr, sg, sb);
 
           *dstptr++ = color & 0xFF;
         }
+      GRUB_VIDEO_FB_ADVANCE_POINTER (srcptr, srcrowskip);
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
     }
 }
 
 /* Generic blending blitter.  Works for every supported format.  */
-void
+static void
 grub_video_fbblit_blend (struct grub_video_fbblit_info *dst,
 			 struct grub_video_fbblit_info *src,
 			 int x, int y, int width, int height,
@@ -752,11 +1191,11 @@ grub_video_fbblit_blend (struct grub_video_fbblit_info *dst,
 					 &dst_green, &dst_blue, &dst_alpha);
 
           dst_red = (((src_red * src_alpha)
-                      + (dst_red * (255 - src_alpha))) / 255);
+                      + (dst_red * (255 ^ src_alpha))) / 255U);
           dst_green = (((src_green * src_alpha)
-                        + (dst_green * (255 - src_alpha))) / 255);
+                        + (dst_green * (255 ^ src_alpha))) / 255U);
           dst_blue = (((src_blue * src_alpha)
-                       + (dst_blue * (255 - src_alpha))) / 255);
+                       + (dst_blue * (255 ^ src_alpha))) / 255U);
 
           dst_alpha = src_alpha;
           dst_color = grub_video_fb_map_rgba (dst_red, dst_green, dst_blue,
@@ -768,7 +1207,7 @@ grub_video_fbblit_blend (struct grub_video_fbblit_info *dst,
 }
 
 /* Optimized blending blitter for RGBA8888 to BGRA8888.  */
-void
+static void
 grub_video_fbblit_blend_BGRA8888_RGBA8888 (struct grub_video_fbblit_info *dst,
 					   struct grub_video_fbblit_info *src,
 					   int x, int y,
@@ -787,8 +1226,8 @@ grub_video_fbblit_blend_BGRA8888_RGBA8888 (struct grub_video_fbblit_info *dst,
   srcrowskip = src->mode_info->pitch - src->mode_info->bytes_per_pixel * width;
   dstrowskip = dst->mode_info->pitch - dst->mode_info->bytes_per_pixel * width;
 
-  srcptr = (grub_uint32_t *) grub_video_fb_get_video_ptr (src, offset_x, offset_y);
-  dstptr = (grub_uint32_t *) grub_video_fb_get_video_ptr (dst, x, y);
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   for (j = 0; j < height; j++)
     {
@@ -831,11 +1270,11 @@ grub_video_fbblit_blend_BGRA8888_RGBA8888 (struct grub_video_fbblit_info *dst,
               color = *dstptr;
 
               dr = (color >> 16) & 0xFF;
-              dr = (dr * (255 - a) + sr * a) / 255;
+              dr = (dr * (255 ^ a) + sr * a) / 255U;
               dg = (color >> 8) & 0xFF;
-              dg = (dg * (255 - a) + sg * a) / 255;
+              dg = (dg * (255 ^ a) + sg * a) / 255U;
               db = (color >> 0) & 0xFF;
-              db = (db * (255 - a) + sb * a) / 255;
+              db = (db * (255 ^ a) + sb * a) / 255U;
             }
 
           color = (a << 24) | (dr << 16) | (dg << 8) | db;
@@ -843,13 +1282,13 @@ grub_video_fbblit_blend_BGRA8888_RGBA8888 (struct grub_video_fbblit_info *dst,
           *dstptr++ = color;
         }
 
-      srcptr = (grub_uint32_t *) (((grub_uint8_t *) srcptr) + srcrowskip);
-      dstptr = (grub_uint32_t *) (((grub_uint8_t *) dstptr) + dstrowskip);
+      GRUB_VIDEO_FB_ADVANCE_POINTER (srcptr, srcrowskip);
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
     }
 }
 
 /* Optimized blending blitter for RGBA8888 to BGR888.  */
-void
+static void
 grub_video_fbblit_blend_BGR888_RGBA8888 (struct grub_video_fbblit_info *dst,
 					 struct grub_video_fbblit_info *src,
 					 int x, int y,
@@ -868,8 +1307,8 @@ grub_video_fbblit_blend_BGR888_RGBA8888 (struct grub_video_fbblit_info *dst,
   srcrowskip = src->mode_info->pitch - src->mode_info->bytes_per_pixel * width;
   dstrowskip = dst->mode_info->pitch - dst->mode_info->bytes_per_pixel * width;
 
-  srcptr = (grub_uint32_t *) grub_video_fb_get_video_ptr (src, offset_x, offset_y);
-  dstptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (dst, x, y);
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   for (j = 0; j < height; j++)
     {
@@ -911,26 +1350,39 @@ grub_video_fbblit_blend_BGR888_RGBA8888 (struct grub_video_fbblit_info *dst,
               /* General pixel color blending.  */
               color = *dstptr;
 
+#ifndef GRUB_CPU_WORDS_BIGENDIAN
               db = dstptr[0];
-              db = (db * (255 - a) + sb * a) / 255;
               dg = dstptr[1];
-              dg = (dg * (255 - a) + sg * a) / 255;
               dr = dstptr[2];
-              dr = (dr * (255 - a) + sr * a) / 255;
+#else
+              dr = dstptr[0];
+              dg = dstptr[1];
+              db = dstptr[2];
+#endif
+
+              db = (db * (255 ^ a) + sb * a) / 255U;
+              dg = (dg * (255 ^ a) + sg * a) / 255U;
+              dr = (dr * (255 ^ a) + sr * a) / 255U;
             }
 
+#ifndef GRUB_CPU_WORDS_BIGENDIAN
           *dstptr++ = db;
           *dstptr++ = dg;
           *dstptr++ = dr;
+#else
+          *dstptr++ = dr;
+          *dstptr++ = dg;
+          *dstptr++ = db;
+#endif
         }
 
-      srcptr = (grub_uint32_t *) (((grub_uint8_t *) srcptr) + srcrowskip);
+      GRUB_VIDEO_FB_ADVANCE_POINTER (srcptr, srcrowskip);
       dstptr += dstrowskip;
     }
 }
 
 /* Optimized blending blitter for RGBA888 to RGBA8888.  */
-void
+static void
 grub_video_fbblit_blend_RGBA8888_RGBA8888 (struct grub_video_fbblit_info *dst,
 					   struct grub_video_fbblit_info *src,
 					   int x, int y,
@@ -949,12 +1401,17 @@ grub_video_fbblit_blend_RGBA8888_RGBA8888 (struct grub_video_fbblit_info *dst,
   unsigned int dr;
   unsigned int dg;
   unsigned int db;
+  grub_size_t srcrowskip;
+  grub_size_t dstrowskip;
+
+  srcrowskip = src->mode_info->pitch - 4 * width;
+  dstrowskip = dst->mode_info->pitch - 4 * width;
+
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   for (j = 0; j < height; j++)
     {
-      srcptr = (grub_uint32_t *)grub_video_fb_get_video_ptr (src, offset_x, j + offset_y);
-      dstptr = (grub_uint32_t *)grub_video_fb_get_video_ptr (dst, x, y + j);
-
       for (i = 0; i < width; i++)
         {
           color = *srcptr++;
@@ -983,19 +1440,21 @@ grub_video_fbblit_blend_RGBA8888_RGBA8888 (struct grub_video_fbblit_info *dst,
           dg = (color >> 8) & 0xFF;
           db = (color >> 16) & 0xFF;
 
-          dr = (dr * (255 - a) + sr * a) / 255;
-          dg = (dg * (255 - a) + sg * a) / 255;
-          db = (db * (255 - a) + sb * a) / 255;
+          dr = (dr * (255 ^ a) + sr * a) / 255U;
+          dg = (dg * (255 ^ a) + sg * a) / 255U;
+          db = (db * (255 ^ a) + sb * a) / 255U;
 
           color = (a << 24) | (db << 16) | (dg << 8) | dr;
 
           *dstptr++ = color;
         }
+      GRUB_VIDEO_FB_ADVANCE_POINTER (srcptr, srcrowskip);
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
     }
 }
 
 /* Optimized blending blitter for RGBA8888 to RGB888.  */
-void
+static void
 grub_video_fbblit_blend_RGB888_RGBA8888 (struct grub_video_fbblit_info *dst,
 					 struct grub_video_fbblit_info *src,
 					 int x, int y,
@@ -1014,12 +1473,17 @@ grub_video_fbblit_blend_RGB888_RGBA8888 (struct grub_video_fbblit_info *dst,
   unsigned int dr;
   unsigned int dg;
   unsigned int db;
+  grub_size_t srcrowskip;
+  grub_size_t dstrowskip;
+
+  srcrowskip = src->mode_info->pitch - 4 * width;
+  dstrowskip = dst->mode_info->pitch - 3 * width;
+
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   for (j = 0; j < height; j++)
     {
-      srcptr = (grub_uint32_t *)grub_video_fb_get_video_ptr (src, offset_x, j + offset_y);
-      dstptr = (grub_uint8_t *)grub_video_fb_get_video_ptr (dst, x, y + j);
-
       for (i = 0; i < width; i++)
         {
           color = *srcptr++;
@@ -1038,30 +1502,50 @@ grub_video_fbblit_blend_RGB888_RGBA8888 (struct grub_video_fbblit_info *dst,
 
           if (a == 255)
             {
+#ifndef GRUB_CPU_WORDS_BIGENDIAN
               *dstptr++ = sr;
               *dstptr++ = sg;
               *dstptr++ = sb;
+#else
+              *dstptr++ = sb;
+              *dstptr++ = sg;
+              *dstptr++ = sr;
+#endif
 
               continue;
             }
 
+#ifndef GRUB_CPU_WORDS_BIGENDIAN
           dr = dstptr[0];
           dg = dstptr[1];
           db = dstptr[2];
+#else
+          db = dstptr[0];
+          dg = dstptr[1];
+          dr = dstptr[2];
+#endif
 
-          dr = (dr * (255 - a) + sr * a) / 255;
-          dg = (dg * (255 - a) + sg * a) / 255;
-          db = (db * (255 - a) + sb * a) / 255;
+          dr = (dr * (255 ^ a) + sr * a) / 255U;
+          dg = (dg * (255 ^ a) + sg * a) / 255U;
+          db = (db * (255 ^ a) + sb * a) / 255U;
 
+#ifndef GRUB_CPU_WORDS_BIGENDIAN
           *dstptr++ = dr;
           *dstptr++ = dg;
           *dstptr++ = db;
+#else
+          *dstptr++ = db;
+          *dstptr++ = dg;
+          *dstptr++ = dr;
+#endif
         }
+      GRUB_VIDEO_FB_ADVANCE_POINTER (srcptr, srcrowskip);
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
     }
 }
 
 /* Optimized blending blitter for RGBA8888 to indexed color.  */
-void
+static void
 grub_video_fbblit_blend_index_RGBA8888 (struct grub_video_fbblit_info *dst,
 					struct grub_video_fbblit_info *src,
 					int x, int y,
@@ -1081,12 +1565,17 @@ grub_video_fbblit_blend_index_RGBA8888 (struct grub_video_fbblit_info *dst,
   unsigned char dg;
   unsigned char db;
   unsigned char da;
+  grub_size_t srcrowskip;
+  grub_size_t dstrowskip;
+
+  srcrowskip = src->mode_info->pitch - 4 * width;
+  dstrowskip = dst->mode_info->pitch - width;
+
+  srcptr = grub_video_fb_get_video_ptr (src, offset_x, offset_y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   for (j = 0; j < height; j++)
     {
-      srcptr = (grub_uint32_t *)grub_video_fb_get_video_ptr (src, offset_x, j + offset_y);
-      dstptr = (grub_uint8_t *)grub_video_fb_get_video_ptr (dst, x, y + j);
-
       for (i = 0; i < width; i++)
         {
           color = *srcptr++;
@@ -1112,19 +1601,21 @@ grub_video_fbblit_blend_index_RGBA8888 (struct grub_video_fbblit_info *dst,
 
           grub_video_fb_unmap_color_int (dst, *dstptr, &dr, &dg, &db, &da);
 
-          dr = (dr * (255 - a) + sr * a) / 255;
-          dg = (dg * (255 - a) + sg * a) / 255;
-          db = (db * (255 - a) + sb * a) / 255;
+          dr = (dr * (255 ^ a) + sr * a) / 255U;
+          dg = (dg * (255 ^ a) + sg * a) / 255U;
+          db = (db * (255 ^ a) + sb * a) / 255U;
 
           color = grub_video_fb_map_rgb(dr, dg, db);
 
           *dstptr++ = color & 0xFF;
         }
+      GRUB_VIDEO_FB_ADVANCE_POINTER (srcptr, srcrowskip);
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
     }
 }
 
 /* Optimized blending blitter for 1-bit to XXXA8888.  */
-void
+static void
 grub_video_fbblit_blend_XXXA8888_1bit (struct grub_video_fbblit_info *dst,
 				       struct grub_video_fbblit_info *src,
 				       int x, int y,
@@ -1134,7 +1625,7 @@ grub_video_fbblit_blend_XXXA8888_1bit (struct grub_video_fbblit_info *dst,
   int i;
   int j;
   grub_uint8_t *srcptr;
-  grub_uint8_t *dstptr;
+  grub_uint32_t *dstptr;
   grub_uint8_t srcmask;
   unsigned int dstrowskip;
   unsigned int srcrowskipbyte, srcrowskipbit;
@@ -1150,7 +1641,7 @@ grub_video_fbblit_blend_XXXA8888_1bit (struct grub_video_fbblit_info *dst,
   bit_index = offset_y * src->mode_info->width + offset_x;
   srcptr = (grub_uint8_t *) src->data + (bit_index >> 3);
   srcmask = 1 << (~bit_index & 7);
-  dstptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (dst, x, y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   fgcolor = grub_video_fb_map_rgba (src->mode_info->fg_red,
 				    src->mode_info->fg_green,
@@ -1181,23 +1672,22 @@ grub_video_fbblit_blend_XXXA8888_1bit (struct grub_video_fbblit_info *dst,
 	    }
 
 	  if (a == 255)
-	    *(grub_uint32_t *) dstptr = color;
+	    *dstptr = color;
 	  else if (a != 0)
 	    {
 	      grub_uint8_t s1 = (color >> 0) & 0xFF;
 	      grub_uint8_t s2 = (color >> 8) & 0xFF;
 	      grub_uint8_t s3 = (color >> 16) & 0xFF;
 
-	      grub_uint8_t d1 = (*(grub_uint32_t *) dstptr >> 0) & 0xFF;
-	      grub_uint8_t d2 = (*(grub_uint32_t *) dstptr >> 8) & 0xFF;
-	      grub_uint8_t d3 = (*(grub_uint32_t *) dstptr >> 16) & 0xFF;
+	      grub_uint8_t d1 = (*dstptr >> 0) & 0xFF;
+	      grub_uint8_t d2 = (*dstptr >> 8) & 0xFF;
+	      grub_uint8_t d3 = (*dstptr >> 16) & 0xFF;
 
-	      d1 = (d1 * (255 - a) + s1 * a) / 255;
-	      d2 = (d2 * (255 - a) + s2 * a) / 255;
-	      d3 = (d3 * (255 - a) + s3 * a) / 255;
+	      d1 = (d1 * (255 ^ a) + s1 * a) / 255U;
+	      d2 = (d2 * (255 ^ a) + s2 * a) / 255U;
+	      d3 = (d3 * (255 ^ a) + s3 * a) / 255U;
 
-	      *(grub_uint32_t *) dstptr = (a << 24) | (d3 << 16) | (d2 << 8)
-		| d1;
+	      *dstptr = (a << 24) | (d3 << 16) | (d2 << 8) | d1;
 	    }
 
 	  srcmask >>= 1;
@@ -1207,7 +1697,7 @@ grub_video_fbblit_blend_XXXA8888_1bit (struct grub_video_fbblit_info *dst,
 	      srcmask = 0x80;
 	    }
 
-	  dstptr += 4;
+	  dstptr++;
         }
 
       srcptr += srcrowskipbyte;
@@ -1218,12 +1708,13 @@ grub_video_fbblit_blend_XXXA8888_1bit (struct grub_video_fbblit_info *dst,
 	  srcptr++;
 	  srcmask <<= 8 - srcrowskipbit;
 	}
-      dstptr += dstrowskip;
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
     }
 }
 
 /* Optimized blending blitter for 1-bit to XXX888.  */
-void
+#ifdef GRUB_HAVE_UNALIGNED_ACCESS
+static void
 grub_video_fbblit_blend_XXX888_1bit (struct grub_video_fbblit_info *dst,
 				     struct grub_video_fbblit_info *src,
 				     int x, int y,
@@ -1249,7 +1740,7 @@ grub_video_fbblit_blend_XXX888_1bit (struct grub_video_fbblit_info *dst,
   bit_index = offset_y * src->mode_info->width + offset_x;
   srcptr = (grub_uint8_t *) src->data + (bit_index >> 3);
   srcmask = 1 << (~bit_index & 7);
-  dstptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (dst, x, y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   fgcolor = grub_video_fb_map_rgba (src->mode_info->fg_red,
 				    src->mode_info->fg_green,
@@ -1280,9 +1771,15 @@ grub_video_fbblit_blend_XXX888_1bit (struct grub_video_fbblit_info *dst,
 
 	  if (a == 255)
 	    {
+#ifndef GRUB_CPU_WORDS_BIGENDIAN
 	      ((grub_uint8_t *) dstptr)[0] = color & 0xff;
 	      ((grub_uint8_t *) dstptr)[1] = (color & 0xff00) >> 8;
 	      ((grub_uint8_t *) dstptr)[2] = (color & 0xff0000) >> 16;
+#else
+	      ((grub_uint8_t *) dstptr)[2] = color & 0xff;
+	      ((grub_uint8_t *) dstptr)[1] = (color & 0xff00) >> 8;
+	      ((grub_uint8_t *) dstptr)[0] = (color & 0xff0000) >> 16;
+#endif
 	    }
 	  else if (a != 0)
 	    {
@@ -1294,9 +1791,9 @@ grub_video_fbblit_blend_XXX888_1bit (struct grub_video_fbblit_info *dst,
 	      grub_uint8_t d2 = (*(grub_uint32_t *) dstptr >> 8) & 0xFF;
 	      grub_uint8_t d3 = (*(grub_uint32_t *) dstptr >> 16) & 0xFF;
 
-	      ((grub_uint8_t *) dstptr)[0] = (d1 * (255 - a) + s1 * a) / 255;
-	      ((grub_uint8_t *) dstptr)[1] = (d2 * (255 - a) + s2 * a) / 255;
-	      ((grub_uint8_t *) dstptr)[2] = (d3 * (255 - a) + s3 * a) / 255;
+	      ((grub_uint8_t *) dstptr)[0] = (d1 * (255 ^ a) + s1 * a) / 255U;
+	      ((grub_uint8_t *) dstptr)[1] = (d2 * (255 ^ a) + s2 * a) / 255U;
+	      ((grub_uint8_t *) dstptr)[2] = (d3 * (255 ^ a) + s3 * a) / 255U;
 	    }
 
 	  srcmask >>= 1;
@@ -1320,9 +1817,10 @@ grub_video_fbblit_blend_XXX888_1bit (struct grub_video_fbblit_info *dst,
       dstptr += dstrowskip;
     }
 }
+#endif
 
 /* Optimized blending blitter for 1-bit to XXX888.  */
-void
+static void
 grub_video_fbblit_blend_XXX565_1bit (struct grub_video_fbblit_info *dst,
 				     struct grub_video_fbblit_info *src,
 				     int x, int y,
@@ -1332,7 +1830,7 @@ grub_video_fbblit_blend_XXX565_1bit (struct grub_video_fbblit_info *dst,
   int i;
   int j;
   grub_uint8_t *srcptr;
-  grub_uint8_t *dstptr;
+  grub_uint16_t *dstptr;
   grub_uint8_t srcmask;
   unsigned int dstrowskip;
   unsigned int srcrowskipbyte, srcrowskipbit;
@@ -1348,7 +1846,7 @@ grub_video_fbblit_blend_XXX565_1bit (struct grub_video_fbblit_info *dst,
   bit_index = offset_y * src->mode_info->width + offset_x;
   srcptr = (grub_uint8_t *) src->data + (bit_index >> 3);
   srcmask = 1 << (~bit_index & 7);
-  dstptr = (grub_uint8_t *) grub_video_fb_get_video_ptr (dst, x, y);
+  dstptr = grub_video_fb_get_video_ptr (dst, x, y);
 
   fgcolor = grub_video_fb_map_rgba (src->mode_info->fg_red,
 				    src->mode_info->fg_green,
@@ -1378,23 +1876,22 @@ grub_video_fbblit_blend_XXX565_1bit (struct grub_video_fbblit_info *dst,
 	    }
 
 	  if (a == 255)
-	    *(grub_uint16_t *) dstptr = color;
+	    *dstptr = color;
 	  else if (a != 0)
 	    {
 	      grub_uint8_t s1 = (color >> 0) & 0x1F;
 	      grub_uint8_t s2 = (color >> 5) & 0x3F;
 	      grub_uint8_t s3 = (color >> 11) & 0x1F;
 
-	      grub_uint8_t d1 = (*(grub_uint16_t *) dstptr >> 0) & 0x1F;
-	      grub_uint8_t d2 = (*(grub_uint16_t *) dstptr >> 5) & 0x3F;
-	      grub_uint8_t d3 = (*(grub_uint16_t *) dstptr >> 11) & 0x1F;
+	      grub_uint8_t d1 = (*dstptr >> 0) & 0x1F;
+	      grub_uint8_t d2 = (*dstptr >> 5) & 0x3F;
+	      grub_uint8_t d3 = (*dstptr >> 11) & 0x1F;
 
-	      d1 = (d1 * (255 - a) + s1 * a) / 255;
-	      d2 = (d2 * (255 - a) + s2 * a) / 255;
-	      d3 = (d3 * (255 - a) + s3 * a) / 255;
+	      d1 = (d1 * (255 ^ a) + s1 * a) / 255U;
+	      d2 = (d2 * (255 ^ a) + s2 * a) / 255U;
+	      d3 = (d3 * (255 ^ a) + s3 * a) / 255U;
 
-	      *(grub_uint16_t *) dstptr = (d1 & 0x1f) | ((d2 & 0x3f) << 5)
-		| ((d3 & 0x1f) << 11);
+	      *dstptr = (d1 & 0x1f) | ((d2 & 0x3f) << 5) | ((d3 & 0x1f) << 11);
 	    }
 
 	  srcmask >>= 1;
@@ -1404,7 +1901,7 @@ grub_video_fbblit_blend_XXX565_1bit (struct grub_video_fbblit_info *dst,
 	      srcmask = 0x80;
 	    }
 
-	  dstptr += 2;
+	  dstptr++;
         }
 
       srcptr += srcrowskipbyte;
@@ -1415,6 +1912,305 @@ grub_video_fbblit_blend_XXX565_1bit (struct grub_video_fbblit_info *dst,
 	  srcptr++;
 	  srcmask <<= 8 - srcrowskipbit;
 	}
-      dstptr += dstrowskip;
+      GRUB_VIDEO_FB_ADVANCE_POINTER (dstptr, dstrowskip);
+    }
+}
+
+/* NOTE: This function assumes that given coordinates are within bounds of
+   handled data.  */
+void
+grub_video_fb_dispatch_blit (struct grub_video_fbblit_info *target,
+			     struct grub_video_fbblit_info *source,
+			     enum grub_video_blit_operators oper, int x, int y,
+			     unsigned int width, unsigned int height,
+			     int offset_x, int offset_y)
+{
+  if (oper == GRUB_VIDEO_BLIT_REPLACE)
+    {
+      /* Try to figure out more optimized version for replace operator.  */
+      switch (source->mode_info->blit_format)
+	{
+	case GRUB_VIDEO_BLIT_FORMAT_RGBA_8888:
+	  switch (target->mode_info->blit_format)
+	    {
+	    case GRUB_VIDEO_BLIT_FORMAT_RGBA_8888:
+	      grub_video_fbblit_replace_directN (target, source,
+						       x, y, width, height,
+						       offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_BGRA_8888:
+	      grub_video_fbblit_replace_BGRX8888_RGBX8888 (target, source,
+								 x, y, width, height,
+								 offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_BGR_888:
+	      grub_video_fbblit_replace_BGR888_RGBX8888 (target, source,
+							       x, y, width, height,
+							       offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_RGB_888:
+	      grub_video_fbblit_replace_RGB888_RGBX8888 (target, source,
+							       x, y, width, height,
+							       offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR:
+	      grub_video_fbblit_replace_index_RGBX8888 (target, source,
+							      x, y, width, height,
+							      offset_x, offset_y);
+	      return;
+	    default:
+	      break;
+	    }
+	  break;
+	case GRUB_VIDEO_BLIT_FORMAT_RGB_888:
+	  switch (target->mode_info->blit_format)
+	    {
+	    case GRUB_VIDEO_BLIT_FORMAT_BGRA_8888:
+	      grub_video_fbblit_replace_BGRX8888_RGB888 (target, source,
+							       x, y, width, height,
+							       offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_RGBA_8888:
+	      grub_video_fbblit_replace_RGBX8888_RGB888 (target, source,
+							       x, y, width, height,
+							       offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_BGR_888:
+	      grub_video_fbblit_replace_BGR888_RGB888 (target, source,
+							     x, y, width, height,
+							     offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_RGB_888:
+	      grub_video_fbblit_replace_directN (target, source,
+						       x, y, width, height,
+						       offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR:
+	      grub_video_fbblit_replace_index_RGB888 (target, source,
+							    x, y, width, height,
+							    offset_x, offset_y);
+	      return;
+	    default:
+	      break;
+	    }
+	  break;
+	case GRUB_VIDEO_BLIT_FORMAT_BGRA_8888:
+	  switch (target->mode_info->blit_format)
+	    {
+	    case GRUB_VIDEO_BLIT_FORMAT_BGRA_8888:
+	      grub_video_fbblit_replace_directN (target, source,
+						       x, y, width, height,
+						       offset_x, offset_y);
+	      return;
+	    default:
+	      break;
+	    }
+	  break;
+	case GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR:
+	  switch (target->mode_info->blit_format)
+	    {
+	    case GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR:
+	    case GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR_ALPHA:
+	      grub_video_fbblit_replace_directN (target, source,
+						       x, y, width, height,
+						       offset_x, offset_y);
+	      return;
+	    default:
+	      break;
+	    }
+	  break;
+	case GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR_ALPHA:
+	  switch (target->mode_info->bytes_per_pixel)
+	    {
+	    case 4:
+	      grub_video_fbblit_replace_32bit_indexa (target, source,
+						      x, y, width, height,
+						      offset_x, offset_y);
+	      return;
+	    case 3:
+	      grub_video_fbblit_replace_24bit_indexa (target, source,
+						      x, y, width, height,
+						      offset_x, offset_y);
+	      return;
+	    case 2:
+	      grub_video_fbblit_replace_16bit_indexa (target, source,
+						      x, y, width, height,
+						      offset_x, offset_y);
+	      return;
+	    case 1:
+	      grub_video_fbblit_replace_8bit_indexa (target, source,
+						     x, y, width, height,
+						     offset_x, offset_y);
+	      return;
+	    default:
+	      break;
+	    }
+	  break;
+	case GRUB_VIDEO_BLIT_FORMAT_1BIT_PACKED:
+	  switch (target->mode_info->bytes_per_pixel)
+	    {
+	    case 4:
+	      grub_video_fbblit_replace_32bit_1bit (target, source,
+						    x, y, width, height,
+						    offset_x, offset_y);
+	      return;
+#ifdef GRUB_HAVE_UNALIGNED_ACCESS
+	    case 3:
+	      grub_video_fbblit_replace_24bit_1bit (target, source,
+						    x, y, width, height,
+						    offset_x, offset_y);
+	      return;
+#endif
+	    case 2:
+	      grub_video_fbblit_replace_16bit_1bit (target, source,
+						    x, y, width, height,
+						    offset_x, offset_y);
+	      return;
+	    case 1:
+	      grub_video_fbblit_replace_8bit_1bit (target, source,
+						   x, y, width, height,
+						   offset_x, offset_y);
+	      return;
+	    }
+	  break;
+	default:
+	  break;
+	}
+
+      /* No optimized replace operator found, use default (slow) blitter.  */
+      grub_video_fbblit_replace (target, source, x, y, width, height,
+				       offset_x, offset_y);
+    }
+  else
+    {
+      /* Try to figure out more optimized blend operator.  */
+      switch (source->mode_info->blit_format)
+	{
+	case GRUB_VIDEO_BLIT_FORMAT_RGBA_8888:
+	  switch (target->mode_info->blit_format)
+	    {
+	    case GRUB_VIDEO_BLIT_FORMAT_BGRA_8888:
+	      grub_video_fbblit_blend_BGRA8888_RGBA8888 (target, source,
+							       x, y, width, height,
+							       offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_RGBA_8888:
+	      grub_video_fbblit_blend_RGBA8888_RGBA8888 (target, source,
+							       x, y, width, height,
+							       offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_BGR_888:
+	      grub_video_fbblit_blend_BGR888_RGBA8888 (target, source,
+							     x, y, width, height,
+							     offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_RGB_888:
+	      grub_video_fbblit_blend_RGB888_RGBA8888 (target, source,
+							     x, y, width, height,
+							     offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR:
+	      grub_video_fbblit_blend_index_RGBA8888 (target, source,
+							    x, y, width, height,
+							    offset_x, offset_y);
+	      return;
+	    default:
+	      break;
+	    }
+	  break;
+	case GRUB_VIDEO_BLIT_FORMAT_RGB_888:
+	  /* Note: There is really no alpha information here, so blend is
+	     changed to replace.  */
+
+	  switch (target->mode_info->blit_format)
+	    {
+	    case GRUB_VIDEO_BLIT_FORMAT_BGRA_8888:
+	      grub_video_fbblit_replace_BGRX8888_RGB888 (target, source,
+							       x, y, width, height,
+							       offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_RGBA_8888:
+	      grub_video_fbblit_replace_RGBX8888_RGB888 (target, source,
+							       x, y, width, height,
+							       offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_BGR_888:
+	      grub_video_fbblit_replace_BGR888_RGB888 (target, source,
+							     x, y, width, height,
+							     offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_RGB_888:
+	      grub_video_fbblit_replace_directN (target, source,
+						       x, y, width, height,
+						       offset_x, offset_y);
+	      return;
+	    case GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR:
+	      grub_video_fbblit_replace_index_RGB888 (target, source,
+							    x, y, width, height,
+							    offset_x, offset_y);
+	      return;
+	    default:
+	      break;
+	    }
+	  break;
+	case GRUB_VIDEO_BLIT_FORMAT_1BIT_PACKED:
+	  switch (target->mode_info->blit_format)
+	    {
+	    case GRUB_VIDEO_BLIT_FORMAT_BGRA_8888:
+	    case GRUB_VIDEO_BLIT_FORMAT_RGBA_8888:
+	      grub_video_fbblit_blend_XXXA8888_1bit (target, source,
+						     x, y, width, height,
+						     offset_x, offset_y);
+	      return;
+#ifdef GRUB_HAVE_UNALIGNED_ACCESS
+	    case GRUB_VIDEO_BLIT_FORMAT_BGR_888:
+	    case GRUB_VIDEO_BLIT_FORMAT_RGB_888:
+	      grub_video_fbblit_blend_XXX888_1bit (target, source,
+						   x, y, width, height,
+						   offset_x, offset_y);
+	      return;
+#endif
+	    case GRUB_VIDEO_BLIT_FORMAT_BGR_565:
+	    case GRUB_VIDEO_BLIT_FORMAT_RGB_565:
+	      grub_video_fbblit_blend_XXX565_1bit (target, source,
+						   x, y, width, height,
+						   offset_x, offset_y);
+	      return;
+	    default:
+	      break;
+	    }
+	  break;
+	case GRUB_VIDEO_BLIT_FORMAT_INDEXCOLOR_ALPHA:
+	  switch (target->mode_info->bytes_per_pixel)
+	    {
+	    case 4:
+	      grub_video_fbblit_blend_32bit_indexa (target, source,
+						      x, y, width, height,
+						      offset_x, offset_y);
+	      return;
+	    case 3:
+	      grub_video_fbblit_blend_24bit_indexa (target, source,
+						      x, y, width, height,
+						      offset_x, offset_y);
+	      return;
+	    case 2:
+	      grub_video_fbblit_blend_16bit_indexa (target, source,
+						      x, y, width, height,
+						      offset_x, offset_y);
+	      return;
+	    case 1:
+	      grub_video_fbblit_blend_8bit_indexa (target, source,
+						     x, y, width, height,
+						     offset_x, offset_y);
+	      return;
+	    }
+	  break;
+	default:
+	  break;
+	}
+
+      /* No optimized blend operation found, use default (slow) blitter.  */
+      grub_video_fbblit_blend (target, source, x, y, width, height,
+				     offset_x, offset_y);
     }
 }

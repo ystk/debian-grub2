@@ -25,54 +25,23 @@
 #include <grub/dl.h>
 #include <grub/crypto.h>
 
-#ifdef GRUB_CPU_WORDS_BIGENDIAN
-#define WORDS_BIGENDIAN
-#else
-#undef WORDS_BIGENDIAN
-#endif
+#include <sys/types.h>
 
-#define __GNU_LIBRARY__
+#define _gcry_mpi_invm gcry_mpi_invm
+#define _gcry_mpi_set gcry_mpi_set
+#define _gcry_mpi_set_ui gcry_mpi_set_ui
+#define size_t grub_size_t
 
-#define DIM ARRAY_SIZE
-
-typedef grub_uint64_t u64;
-typedef grub_uint32_t u32;
-typedef grub_uint16_t u16;
-typedef grub_uint8_t byte;
-typedef grub_size_t size_t;
+#undef __GNU_LIBRARY__
+#define __GNU_LIBRARY__ 1
 
 #define U64_C(c) (c ## ULL)
-
-#define _gcry_burn_stack grub_burn_stack
-#define log_error(fmt, args...) grub_dprintf ("crypto", fmt, ## args)
-
 
 #define PUBKEY_FLAG_NO_BLINDING    (1 << 0)
 
 #define CIPHER_INFO_NO_WEAK_KEY    1
 
 #define HAVE_U64_TYPEDEF 1
-
-typedef union {
-    int a;
-    short b;
-    char c[1];
-    long d;
-#ifdef HAVE_U64_TYPEDEF
-    u64 e;
-#endif
-    float f;
-    double g;
-} PROPERLY_ALIGNED_TYPE;
-
-#define gcry_assert(x) grub_assert_real(GRUB_FILE, __LINE__, x)
-
-static inline void
-grub_assert_real (const char *file, int line, int cond)
-{
-  if (!cond)
-    grub_fatal ("Assertion failed at %s:%d\n", file, line);
-}
 
 /* Selftests are in separate modules.  */
 static inline char *
@@ -82,11 +51,27 @@ selftest (void)
 }
 
 static inline int
-fips_mode (void)
+_gcry_fips_mode (void)
 {
   return 0;
 }
 
+#define assert gcry_assert
+
+#ifdef GRUB_UTIL
+
 #define memset grub_memset
+
+#endif
+
+
+#define DBG_CIPHER 0
+
+#include <string.h>
+#pragma GCC diagnostic ignored "-Wredundant-decls"
+#include <grub/gcrypt/g10lib.h>
+#include <grub/gcrypt/gcrypt.h>
+
+#define gcry_mpi_mod _gcry_mpi_mod
 
 #endif

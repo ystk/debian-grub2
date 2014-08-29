@@ -26,23 +26,25 @@
 #include <grub/types.h>
 #include <grub/mm.h>
 #include <grub/term.h>
+#include <grub/i18n.h>
 
 grub_fs_t grub_fs_list = 0;
 
 grub_fs_autoload_hook_t grub_fs_autoload_hook = 0;
 
+/* Helper for grub_fs_probe.  */
+static int
+probe_dummy_iter (const char *filename __attribute__ ((unused)),
+		  const struct grub_dirhook_info *info __attribute__ ((unused)),
+		  void *data __attribute__ ((unused)))
+{
+  return 1;
+}
+
 grub_fs_t
 grub_fs_probe (grub_device_t device)
 {
   grub_fs_t p;
-  auto int dummy_func (const char *filename,
-		       const struct grub_dirhook_info *info);
-
-  int dummy_func (const char *filename __attribute__ ((unused)),
-		  const struct grub_dirhook_info *info  __attribute__ ((unused)))
-    {
-      return 1;
-    }
 
   if (device->disk)
     {
@@ -52,7 +54,23 @@ grub_fs_probe (grub_device_t device)
       for (p = grub_fs_list; p; p = p->next)
 	{
 	  grub_dprintf ("fs", "Detecting %s...\n", p->name);
-	  (p->dir) (device, "/", dummy_func);
+
+	  /* This is evil: newly-created just mounted BtrFS after copying all
+	     GRUB files has a very peculiar unrecoverable corruption which
+	     will be fixed at sync but we'd rather not do a global sync and
+	     syncing just files doesn't seem to help. Relax the check for
+	     this time.  */
+#ifdef GRUB_UTIL
+	  if (grub_strcmp (p->name, "btrfs") == 0)
+	    {
+	      char *label = 0;
+	      p->uuid (device, &label);
+	      if (label)
+		grub_free (label);
+	    }
+	  else
+#endif
+	    (p->dir) (device, "/", probe_dummy_iter, NULL);
 	  if (grub_errno == GRUB_ERR_NONE)
 	    return p;
 
@@ -60,7 +78,8 @@ grub_fs_probe (grub_device_t device)
 	  grub_dprintf ("fs", "%s detection failed.\n", p->name);
 	  grub_error_pop ();
 
-	  if (grub_errno != GRUB_ERR_BAD_FS)
+	  if (grub_errno != GRUB_ERR_BAD_FS
+	      && grub_errno != GRUB_ERR_OUT_OF_RANGE)
 	    return 0;
 
 	  grub_errno = GRUB_ERR_NONE;
@@ -75,14 +94,15 @@ grub_fs_probe (grub_device_t device)
 	    {
 	      p = grub_fs_list;
 
-	      (p->dir) (device, "/", dummy_func);
+	      (p->dir) (device, "/", probe_dummy_iter, NULL);
 	      if (grub_errno == GRUB_ERR_NONE)
 		{
 		  count--;
 		  return p;
 		}
 
-	      if (grub_errno != GRUB_ERR_BAD_FS)
+	      if (grub_errno != GRUB_ERR_BAD_FS
+		  && grub_errno != GRUB_ERR_OUT_OF_RANGE)
 		{
 		  count--;
 		  return 0;
@@ -94,10 +114,10 @@ grub_fs_probe (grub_device_t device)
 	  count--;
 	}
     }
-  else if (device->net->fs)
+  else if (device->net && device->net->fs)
     return device->net->fs;
 
-  grub_error (GRUB_ERR_UNKNOWN_FS, "unknown filesystem");
+  grub_error (GRUB_ERR_UNKNOWN_FS, N_("unknown filesystem"));
   return 0;
 }
 
@@ -145,7 +165,7 @@ grub_fs_blocklist_open (grub_file_t file, const char *name)
 	  if (grub_errno != GRUB_ERR_NONE || *p != '+')
 	    {
 	      grub_error (GRUB_ERR_BAD_FILENAME,
-			  "invalid file name `%s'", name);
+			  N_("invalid file name `%s'"), name);
 	      goto fail;
 	    }
 	}
@@ -157,7 +177,7 @@ grub_fs_blocklist_open (grub_file_t file, const char *name)
 	  || (*p && *p != ',' && ! grub_isspace (*p)))
 	{
 	  grub_error (GRUB_ERR_BAD_FILENAME,
-		      "invalid file name `%s'", name);
+		      N_("invalid file name `%s'"), name);
 	  goto fail;
 	}
 

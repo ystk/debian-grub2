@@ -1,6 +1,6 @@
 /*
  *  GRUB  --  GRand Unified Bootloader
- *  Copyright (C) 2002,2003,2004,2005,2006,2007,2008,2009  Free Software Foundation, Inc.
+ *  Copyright (C) 2002,2003,2004,2005,2006,2007,2008,2009,2013  Free Software Foundation, Inc.
  *
  *  GRUB is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -34,20 +34,13 @@
 #include <grub/cpu/io.h>
 #include <grub/cpu/floppy.h>
 #include <grub/cpu/tsc.h>
-#ifdef GRUB_MACHINE_QEMU
-#include <grub/machine/kernel.h>
-#endif
+#include <grub/video.h>
 
-extern char _start[];
-extern char _end[];
+extern grub_uint8_t _start[];
+extern grub_uint8_t _end[];
+extern grub_uint8_t _edata[];
 
-grub_uint32_t
-grub_get_rtc (void)
-{
-  grub_fatal ("grub_get_rtc() is not implemented.\n");
-}
-
-void
+void  __attribute__ ((noreturn))
 grub_exit (void)
 {
   /* We can't use grub_fatal() in this function.  This would create an infinite
@@ -56,77 +49,90 @@ grub_exit (void)
     grub_cpu_idle ();
 }
 
+grub_addr_t grub_modbase = GRUB_KERNEL_I386_COREBOOT_MODULES_ADDR;
+static grub_uint64_t modend;
+
+/* Helper for grub_machine_init.  */
+static int
+heap_init (grub_uint64_t addr, grub_uint64_t size, grub_memory_type_t type,
+	   void *data __attribute__ ((unused)))
+{
+  grub_uint64_t begin = addr, end = addr + size;
+
+#if GRUB_CPU_SIZEOF_VOID_P == 4
+  /* Restrict ourselves to 32-bit memory space.  */
+  if (begin > GRUB_ULONG_MAX)
+    return 0;
+  if (end > GRUB_ULONG_MAX)
+    end = GRUB_ULONG_MAX;
+#endif
+
+  if (type != GRUB_MEMORY_AVAILABLE)
+    return 0;
+
+  /* Avoid the lower memory.  */
+  if (begin < GRUB_MEMORY_MACHINE_LOWER_SIZE)
+    begin = GRUB_MEMORY_MACHINE_LOWER_SIZE;
+
+  if (modend && begin < modend)
+    begin = modend;
+  
+  if (end <= begin)
+    return 0;
+
+  grub_mm_init_region ((void *) (grub_addr_t) begin, (grub_size_t) (end - begin));
+
+  return 0;
+}
+
+#ifndef GRUB_MACHINE_MULTIBOOT
+
 void
 grub_machine_init (void)
 {
-#ifdef GRUB_MACHINE_QEMU
-  grub_qemu_init_cirrus ();
-#endif
-  /* Initialize the console as early as possible.  */
+  modend = grub_modules_get_end ();
+
+  grub_video_coreboot_fb_early_init ();
+
   grub_vga_text_init ();
 
-  auto int NESTED_FUNC_ATTR heap_init (grub_uint64_t, grub_uint64_t, 
-				       grub_memory_type_t);
-  int NESTED_FUNC_ATTR heap_init (grub_uint64_t addr, grub_uint64_t size,
-				  grub_memory_type_t type)
-  {
-#if GRUB_CPU_SIZEOF_VOID_P == 4
-    /* Restrict ourselves to 32-bit memory space.  */
-    if (addr > GRUB_ULONG_MAX)
-      return 0;
-    if (addr + size > GRUB_ULONG_MAX)
-      size = GRUB_ULONG_MAX - addr;
-#endif
+  grub_machine_mmap_iterate (heap_init, NULL);
 
-    if (type != GRUB_MEMORY_AVAILABLE)
-      return 0;
+  grub_video_coreboot_fb_late_init ();
 
-    /* Avoid the lower memory.  */
-    if (addr < GRUB_MEMORY_MACHINE_LOWER_SIZE)
-      {
-	if (addr + size <= GRUB_MEMORY_MACHINE_LOWER_SIZE)
-	  return 0;
-	else
-	  {
-	    size -= GRUB_MEMORY_MACHINE_LOWER_SIZE - addr;
-	    addr = GRUB_MEMORY_MACHINE_LOWER_SIZE;
-	  }
-      }
-
-    grub_mm_init_region ((void *) (grub_addr_t) addr, (grub_size_t) size);
-
-    return 0;
-  }
-
-#if defined (GRUB_MACHINE_MULTIBOOT) || defined (GRUB_MACHINE_QEMU)
-  grub_machine_mmap_init ();
-#endif
-  grub_machine_mmap_iterate (heap_init);
+  grub_font_init ();
+  grub_gfxterm_init ();
 
   grub_tsc_init ();
 }
 
-void
-grub_machine_set_prefix (void)
-{
-  /* Initialize the prefix.  */
-  grub_env_set ("prefix", grub_prefix);
-}
-
-void
-grub_machine_fini (void)
-{
-  grub_vga_text_fini ();
-  grub_stop_floppy ();
-}
-
-/* Return the end of the core image.  */
-grub_addr_t
-grub_arch_modules_addr (void)
-{
-#ifdef GRUB_MACHINE_QEMU
-  return grub_core_entry_addr + grub_kernel_image_size;
 #else
-  return ALIGN_UP((grub_addr_t) _end, GRUB_KERNEL_MACHINE_MOD_ALIGN);
+
+void
+grub_machine_init (void)
+{
+  modend = grub_modules_get_end ();
+
+  grub_vga_text_init ();
+
+  grub_machine_mmap_init ();
+  grub_machine_mmap_iterate (heap_init, NULL);
+
+  grub_tsc_init ();
+}
+
 #endif
+
+void
+grub_machine_get_bootlocation (char **device __attribute__ ((unused)),
+			       char **path __attribute__ ((unused)))
+{
+}
+
+void
+grub_machine_fini (int flags)
+{
+  if (flags & GRUB_LOADER_FLAG_NORETURN)
+    grub_vga_text_fini ();
+  grub_stop_floppy ();
 }

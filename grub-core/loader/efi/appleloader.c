@@ -76,7 +76,7 @@ struct piwg_full_device_path
       .header = {							\
 	.type = GRUB_EFI_HARDWARE_DEVICE_PATH_TYPE,			\
 	.subtype = GRUB_EFI_MEMORY_MAPPED_DEVICE_PATH_SUBTYPE,		\
-	.length = {sizeof (struct grub_efi_memory_mapped_device_path), 0} \
+	.length = sizeof (struct grub_efi_memory_mapped_device_path)	\
       },								\
       .memory_type = GRUB_EFI_MEMORY_MAPPED_IO,				\
       .start_address = st,						\
@@ -87,16 +87,15 @@ struct piwg_full_device_path
 	.header = {							\
 	  .type = GRUB_EFI_MEDIA_DEVICE_PATH_TYPE,			\
 	  .subtype = GRUB_EFI_PIWG_DEVICE_PATH_SUBTYPE,			\
-	  .length = {sizeof (struct grub_efi_piwg_device_path), 0}	\
+	  .length = sizeof (struct grub_efi_piwg_device_path)		\
 	},								\
-	.guid = {0x2B0585EB, 0xD8B8, 0x49A9, {0x8B, 0x8C, 0xE2, 0x1B,	\
-					      0x01, 0xAE, 0xF2, 0xB7}}	\
+	.guid = GRUB_EFI_VENDOR_APPLE_GUID				\
       },								\
        .end =								\
 	  {								\
 	    .type = GRUB_EFI_END_DEVICE_PATH_TYPE,			\
 	    .subtype = GRUB_EFI_END_ENTIRE_DEVICE_PATH_SUBTYPE,		\
-	    .length = {sizeof (struct grub_efi_device_path), 0}		\
+	    .length = sizeof (struct grub_efi_device_path)		\
 	  }								\
   }
 
@@ -124,9 +123,16 @@ static struct piwg_full_device_path devpath_5 = MAKE_PIWG_PATH (0xffcb4000,
 static struct piwg_full_device_path devpath_6 = MAKE_PIWG_PATH (0xffcc4000,
 								0xffffbfff);
 
+static struct piwg_full_device_path devpath_7 = MAKE_PIWG_PATH (0xff981000,
+								0xffc8ffff);
+
+/* mid-2012 MBP retina (MacBookPro10,1) */ 
+static struct piwg_full_device_path devpath_8 = MAKE_PIWG_PATH (0xff990000,
+								0xffb2ffff);
+
 struct devdata
 {
-  char *model;
+  const char *model;
   grub_efi_device_path_t *devpath;
 };
 
@@ -138,6 +144,8 @@ struct devdata devs[] =
   {"MBA", (grub_efi_device_path_t *) &devpath_4},
   {"MB NV", (grub_efi_device_path_t *) &devpath_5},
   {"MB NV2", (grub_efi_device_path_t *) &devpath_6},
+  {"MBP2011", (grub_efi_device_path_t *) &devpath_7},
+  {"MBP2012", (grub_efi_device_path_t *) &devpath_8},
   {NULL, NULL},
 };
 
@@ -167,7 +175,7 @@ grub_cmd_appleloader (grub_command_t cmd __attribute__ ((unused)),
       goto fail;
     }
 
-  grub_printf ("Model : %s\n", pdev->model);
+  grub_dprintf ("appleload", "Model: %s\n", pdev->model);
 
   loaded_image = grub_efi_get_loaded_image (image_handle);
   if (! loaded_image)
@@ -220,7 +228,11 @@ static grub_command_t cmd;
 GRUB_MOD_INIT(appleloader)
 {
   cmd = grub_register_command ("appleloader", grub_cmd_appleloader,
-			       "[OPTS]", N_("Boot legacy system."));
+			       N_("[OPTS]"),
+			       /* TRANSLATORS: This command is used on EFI to
+				switch to BIOS mode and boot the OS requiring
+				BIOS.  */
+			       N_("Boot BIOS-based system."));
   my_mod = mod;
 }
 

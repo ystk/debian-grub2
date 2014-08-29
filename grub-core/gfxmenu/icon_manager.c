@@ -137,23 +137,19 @@ static struct grub_video_bitmap *
 try_loading_icon (grub_gfxmenu_icon_manager_t mgr,
                   const char *dir, const char *class_name)
 {
-  char *path;
-  int l;
+  char *path, *ptr;
 
   path = grub_malloc (grub_strlen (dir) + grub_strlen (class_name)
 		      + grub_strlen (icon_extension) + 3);
   if (! path)
     return 0;
 
-  grub_strcpy (path, dir);
-  l = grub_strlen (path);
-  if (path[l-1] != '/')
-    {
-      path[l] = '/';
-      path[l+1] = 0;
-    }
-  grub_strcat (path, class_name);
-  grub_strcat (path, icon_extension);
+  ptr = grub_stpcpy (path, dir);
+  if (path == ptr || ptr[-1] != '/')
+    *ptr++ = '/';
+  ptr = grub_stpcpy (ptr, class_name);
+  ptr = grub_stpcpy (ptr, icon_extension);
+  *ptr = '\0';
 
   struct grub_video_bitmap *raw_bitmap;
   grub_video_bitmap_load (&raw_bitmap, path);
@@ -169,11 +165,7 @@ try_loading_icon (grub_gfxmenu_icon_manager_t mgr,
                                    GRUB_VIDEO_BITMAP_SCALE_METHOD_BEST);
   grub_video_bitmap_destroy (raw_bitmap);
   if (! scaled_bitmap)
-    {
-      grub_error_push ();
-      grub_error (grub_errno, "failed to scale icon");
-      return 0;
-    }
+    return 0;
 
   return scaled_bitmap;
 }

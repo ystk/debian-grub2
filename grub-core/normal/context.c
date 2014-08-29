@@ -139,6 +139,8 @@ grub_env_context_close (void)
   grub_current_context = context;
 
   menu = current_menu->prev;
+  if (current_menu->menu)
+    grub_normal_free_menu (current_menu->menu);
   grub_free (current_menu);
   current_menu = menu;
 
@@ -159,7 +161,7 @@ grub_env_extractor_close (int source)
     }
   err = grub_env_context_close ();
 
-  if (source)
+  if (source && menu)
     {
       grub_menu_t menu2;
       menu2 = grub_env_get_menu ();
@@ -186,7 +188,7 @@ grub_cmd_export (struct grub_command *cmd __attribute__ ((unused)),
 
   if (argc < 1)
     return grub_error (GRUB_ERR_BAD_ARGUMENT,
-		       "no environment variable specified");
+		       N_("one argument expected"));
 
   for (i = 0; i < argc; i++)
     grub_env_export (args[i]);

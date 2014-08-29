@@ -28,6 +28,7 @@
 #include <grub/i18n.h>
 #include <grub/memory.h>
 #include <grub/lib/cmdline.h>
+#include <grub/linux.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -180,69 +181,80 @@ grub_linux_unload (void)
 
 #define FOUR_MB	(4 * 1024 * 1024)
 
+/* Context for alloc_phys.  */
+struct alloc_phys_ctx
+{
+  grub_addr_t size;
+  grub_addr_t ret;
+};
+
+/* Helper for alloc_phys.  */
+static int
+alloc_phys_choose (grub_uint64_t addr, grub_uint64_t len,
+		   grub_memory_type_t type, void *data)
+{
+  struct alloc_phys_ctx *ctx = data;
+  grub_addr_t end = addr + len;
+
+  if (type != 1)
+    return 0;
+
+  addr = ALIGN_UP (addr, FOUR_MB);
+  if (addr + ctx->size >= end)
+    return 0;
+
+  if (addr >= grub_phys_start && addr < grub_phys_end)
+    {
+      addr = ALIGN_UP (grub_phys_end, FOUR_MB);
+      if (addr + ctx->size >= end)
+	return 0;
+    }
+  if ((addr + ctx->size) >= grub_phys_start
+      && (addr + ctx->size) < grub_phys_end)
+    {
+      addr = ALIGN_UP (grub_phys_end, FOUR_MB);
+      if (addr + ctx->size >= end)
+	return 0;
+    }
+
+  if (loaded)
+    {
+      grub_addr_t linux_end = ALIGN_UP (linux_paddr + linux_size, FOUR_MB);
+
+      if (addr >= linux_paddr && addr < linux_end)
+	{
+	  addr = linux_end;
+	  if (addr + ctx->size >= end)
+	    return 0;
+	}
+      if ((addr + ctx->size) >= linux_paddr
+	  && (addr + ctx->size) < linux_end)
+	{
+	  addr = linux_end;
+	  if (addr + ctx->size >= end)
+	    return 0;
+	}
+    }
+
+  ctx->ret = addr;
+  return 1;
+}
+
 static grub_addr_t
 alloc_phys (grub_addr_t size)
 {
-  grub_addr_t ret = (grub_addr_t) -1;
+  struct alloc_phys_ctx ctx = {
+    .size = size,
+    .ret = (grub_addr_t) -1
+  };
 
-  auto int NESTED_FUNC_ATTR choose (grub_uint64_t addr, grub_uint64_t len,
-				    grub_memory_type_t type);
-  int NESTED_FUNC_ATTR choose (grub_uint64_t addr, grub_uint64_t len,
-			       grub_memory_type_t type)
-  {
-    grub_addr_t end = addr + len;
+  grub_machine_mmap_iterate (alloc_phys_choose, &ctx);
 
-    if (type != 1)
-      return 0;
-
-    addr = ALIGN_UP (addr, FOUR_MB);
-    if (addr + size >= end)
-      return 0;
-
-    if (addr >= grub_phys_start && addr < grub_phys_end)
-      {
-	addr = ALIGN_UP (grub_phys_end, FOUR_MB);
-	if (addr + size >= end)
-	  return 0;
-      }
-    if ((addr + size) >= grub_phys_start
-	&& (addr + size) < grub_phys_end)
-      {
-	addr = ALIGN_UP (grub_phys_end, FOUR_MB);
-	if (addr + size >= end)
-	  return 0;
-      }
-
-    if (loaded)
-      {
-	grub_addr_t linux_end = ALIGN_UP (linux_paddr + linux_size, FOUR_MB);
-
-	if (addr >= linux_paddr && addr < linux_end)
-	  {
-	    addr = linux_end;
-	    if (addr + size >= end)
-	      return 0;
-	  }
-	if ((addr + size) >= linux_paddr
-	    && (addr + size) < linux_end)
-	  {
-	    addr = linux_end;
-	    if (addr + size >= end)
-	      return 0;
-	  }
-      }
-
-    ret = addr;
-    return 1;
-  }
-
-  grub_machine_mmap_iterate (choose);
-
-  return ret;
+  return ctx.ret;
 }
 
 static grub_err_t
-grub_linux_load64 (grub_elf_t elf)
+grub_linux_load64 (grub_elf_t elf, const char *filename)
 {
   grub_addr_t off, paddr, base;
   int ret;
@@ -275,21 +287,7 @@ grub_linux_load64 (grub_elf_t elf)
   base = linux_entry - off;
 
   /* Now load the segments into the area we claimed.  */
-  auto grub_err_t offset_phdr (Elf64_Phdr *phdr, grub_addr_t *addr, int *do_load);
-  grub_err_t offset_phdr (Elf64_Phdr *phdr, grub_addr_t *addr, int *do_load)
-    {
-      if (phdr->p_type != PT_LOAD)
-	{
-	  *do_load = 0;
-	  return 0;
-	}
-      *do_load = 1;
-
-      /* Adjust the program load address to linux_addr.  */
-      *addr = (phdr->p_paddr - base) + (linux_addr - off);
-      return 0;
-    }
-  return grub_elf64_load (elf, offset_phdr, 0, 0);
+  return grub_elf64_load (elf, filename, (void *) (linux_addr - off - base), GRUB_ELF_LOAD_FLAGS_NONE, 0, 0);
 }
 
 static grub_err_t
@@ -304,7 +302,7 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
 
   if (argc == 0)
     {
-      grub_error (GRUB_ERR_BAD_ARGUMENT, "no kernel specified");
+      grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
       goto out;
     }
 
@@ -312,14 +310,14 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
   if (!file)
     goto out;
 
-  elf = grub_elf_file (file);
+  elf = grub_elf_file (file, argv[0]);
   if (! elf)
     goto out;
 
   if (elf->ehdr.ehdr32.e_type != ET_EXEC)
     {
       grub_error (GRUB_ERR_UNKNOWN_OS,
-		  "this ELF file is not of the right type");
+		  N_("this ELF file is not of the right type"));
       goto out;
     }
 
@@ -327,10 +325,10 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
   grub_loader_unset ();
 
   if (grub_elf_is_elf64 (elf))
-    grub_linux_load64 (elf);
+    grub_linux_load64 (elf, argv[0]);
   else
     {
-      grub_error (GRUB_ERR_BAD_FILE_TYPE, "unknown ELF class");
+      grub_error (GRUB_ERR_BAD_FILE_TYPE, N_("invalid arch-dependent ELF magic"));
       goto out;
     }
 
@@ -371,31 +369,30 @@ static grub_err_t
 grub_cmd_initrd (grub_command_t cmd __attribute__ ((unused)),
 		 int argc, char *argv[])
 {
-  grub_file_t file = 0;
-  grub_ssize_t size;
+  grub_size_t size = 0;
   grub_addr_t paddr;
   grub_addr_t addr;
   int ret;
+  struct grub_linux_initrd_context initrd_ctx;
 
   if (argc == 0)
     {
-      grub_error (GRUB_ERR_BAD_ARGUMENT, "no initrd specified");
+      grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
       goto fail;
     }
 
   if (!loaded)
     {
-      grub_error (GRUB_ERR_BAD_ARGUMENT, "you need to load the kernel first");
+      grub_error (GRUB_ERR_BAD_ARGUMENT, N_("you need to load the kernel first"));
       goto fail;
     }
 
-  grub_file_filter_disable_compression ();
-  file = grub_file_open (argv[0]);
-  if (! file)
+  if (grub_initrd_init (argc, argv, &initrd_ctx))
     goto fail;
 
+  size = grub_get_initrd_size (&initrd_ctx);
+
   addr = 0x60000000;
-  size = grub_file_size (file);
 
   paddr = alloc_phys (size);
   if (paddr == (grub_addr_t) -1)
@@ -415,38 +412,36 @@ grub_cmd_initrd (grub_command_t cmd __attribute__ ((unused)),
   grub_dprintf ("loader", "Loading initrd at vaddr 0x%lx, paddr 0x%lx, size 0x%lx\n",
 		addr, paddr, size);
 
-  if (grub_file_read (file, (void *) addr, size) != size)
-    {
-      grub_error (GRUB_ERR_FILE_READ_ERROR, "couldn't read file");
-      goto fail;
-    }
+  if (grub_initrd_load (&initrd_ctx, argv, (void *) addr))
+    goto fail;
 
   initrd_addr = addr;
   initrd_paddr = paddr;
   initrd_size = size;
 
  fail:
-  if (file)
-    grub_file_close (file);
+  grub_initrd_close (&initrd_ctx);
 
   return grub_errno;
+}
+
+/* Helper for determine_phys_base.  */
+static int
+get_physbase (grub_uint64_t addr, grub_uint64_t len __attribute__ ((unused)),
+	      grub_memory_type_t type, void *data __attribute__ ((unused)))
+{
+  if (type != 1)
+    return 0;
+  if (addr < phys_base)
+    phys_base = addr;
+  return 0;
 }
 
 static void
 determine_phys_base (void)
 {
-  auto int NESTED_FUNC_ATTR get_physbase (grub_uint64_t addr, grub_uint64_t len __attribute__((unused)), grub_uint32_t type);
-  int NESTED_FUNC_ATTR get_physbase (grub_uint64_t addr, grub_uint64_t len __attribute__((unused)), grub_uint32_t type)
-  {
-    if (type != 1)
-      return 0;
-    if (addr < phys_base)
-      phys_base = addr;
-    return 0;
-  }
-
   phys_base = ~(grub_uint64_t) 0;
-  grub_machine_mmap_iterate (get_physbase);
+  grub_machine_mmap_iterate (get_physbase, NULL);
 }
 
 static void

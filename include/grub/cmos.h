@@ -20,8 +20,10 @@
 #define	GRUB_CMOS_H	1
 
 #include <grub/types.h>
+#if !defined (__powerpc__) && !defined (__sparc__)
 #include <grub/cpu/io.h>
 #include <grub/cpu/cmos.h>
+#endif
 
 #define GRUB_CMOS_INDEX_SECOND		0
 #define GRUB_CMOS_INDEX_SECOND_ALARM	1
@@ -55,18 +57,72 @@ grub_num_to_bcd (grub_uint8_t a)
   return (((a / 10) << 4) + (a % 10));
 }
 
-static inline grub_uint8_t
-grub_cmos_read (grub_uint8_t index)
+#if !defined (__powerpc__) && !defined (__sparc__)
+static inline grub_err_t
+grub_cmos_read (grub_uint8_t index, grub_uint8_t *val)
 {
-  grub_outb (index, GRUB_CMOS_ADDR_REG);
-  return grub_inb (GRUB_CMOS_DATA_REG);
+  if (index & 0x80)
+    {
+      grub_outb (index & 0x7f, GRUB_CMOS_ADDR_REG_HI);
+      *val = grub_inb (GRUB_CMOS_DATA_REG_HI);
+    }
+  else
+    {
+      grub_outb (index & 0x7f, GRUB_CMOS_ADDR_REG);
+      *val = grub_inb (GRUB_CMOS_DATA_REG);
+    }
+  return GRUB_ERR_NONE;
 }
 
-static inline void
+static inline grub_err_t
 grub_cmos_write (grub_uint8_t index, grub_uint8_t value)
 {
-  grub_outb (index, GRUB_CMOS_ADDR_REG);
-  grub_outb (value, GRUB_CMOS_DATA_REG);
+  if (index & 0x80)
+    {
+      grub_outb (index & 0x7f, GRUB_CMOS_ADDR_REG_HI);
+      grub_outb (value, GRUB_CMOS_DATA_REG_HI);
+    }
+  else
+    {
+      grub_outb (index & 0x7f, GRUB_CMOS_ADDR_REG);
+      grub_outb (value, GRUB_CMOS_DATA_REG);
+    }
+  return GRUB_ERR_NONE;
 }
+#else
+grub_err_t grub_cmos_find_port (void);
+extern volatile grub_uint8_t *grub_cmos_port;
+
+static inline grub_err_t
+grub_cmos_read (grub_uint8_t index, grub_uint8_t *val)
+{
+  if (!grub_cmos_port)
+    {
+      grub_err_t err;
+      err = grub_cmos_find_port ();
+      if (err)
+	return err;
+    }
+  grub_cmos_port[((index & 0x80) >> 6) | 0] = index & 0x7f;
+  *val = grub_cmos_port[((index & 0x80) >> 6) | 1];
+  return GRUB_ERR_NONE;
+}
+
+static inline grub_err_t
+grub_cmos_write (grub_uint8_t index, grub_uint8_t val)
+{
+  if (!grub_cmos_port)
+    {
+      grub_err_t err;
+      err = grub_cmos_find_port ();
+      if (err)
+	return err;
+    }
+  grub_cmos_port[((index & 0x80) >> 6) | 0] = index;
+  grub_cmos_port[((index & 0x80) >> 6) | 1] = val;
+  return GRUB_ERR_NONE;
+}
+
+#endif
 
 #endif /* GRUB_CMOS_H */

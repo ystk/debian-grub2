@@ -48,7 +48,7 @@ static struct grub_fs grub_xzio_fs;
 
 static grub_size_t
 decode_vli (const grub_uint8_t buf[], grub_size_t size_max,
-	    grub_uint64_t * num)
+	    grub_uint64_t *num)
 {
   if (size_max == 0)
     return 0;
@@ -71,18 +71,18 @@ decode_vli (const grub_uint8_t buf[], grub_size_t size_max,
 }
 
 static grub_ssize_t
-read_vli (grub_file_t file, grub_uint64_t * num)
+read_vli (grub_file_t file, grub_uint64_t *num)
 {
   grub_uint8_t buf[VLI_MAX_DIGITS];
-  grub_ssize_t read;
+  grub_ssize_t read_bytes;
   grub_size_t dec;
 
-  read = grub_file_read (file, buf, VLI_MAX_DIGITS);
-  if (read < 0)
+  read_bytes = grub_file_read (file, buf, VLI_MAX_DIGITS);
+  if (read_bytes < 0)
     return -1;
 
-  dec = decode_vli (buf, read, num);
-  grub_file_seek (file, file->offset - (read - dec));
+  dec = decode_vli (buf, read_bytes, num);
+  grub_file_seek (file, file->offset - (read_bytes - dec));
   return dec;
 }
 
@@ -92,28 +92,21 @@ static int
 test_header (grub_file_t file)
 {
   grub_xzio_t xzio = file->data;
+  enum xz_ret ret;
+
   xzio->buf.in_size = grub_file_read (xzio->file, xzio->inbuf,
 				      STREAM_HEADER_SIZE);
 
   if (xzio->buf.in_size != STREAM_HEADER_SIZE)
-    {
-      grub_error (GRUB_ERR_BAD_FILE_TYPE, "no xz magic found");
-      return 0;
-    }
+    return 0;
 
-  enum xz_ret ret = xz_dec_run (xzio->dec, &xzio->buf);
+  ret = xz_dec_run (xzio->dec, &xzio->buf);
 
   if (ret == XZ_FORMAT_ERROR)
-    {
-      grub_error (GRUB_ERR_BAD_FILE_TYPE, "no xz magic found");
-      return 0;
-    }
+    return 0;
 
   if (ret != XZ_OK)
-    {
-      grub_error (GRUB_ERR_BAD_COMPRESSED_DATA, "not supported xz options");
-      return 0;
-    }
+    return 0;
 
   return 1;
 }
@@ -132,8 +125,8 @@ test_footer (grub_file_t file)
   grub_uint64_t records;
 
   grub_file_seek (xzio->file, xzio->file->size - FOOTER_MAGIC_SIZE);
-  if (grub_file_read (xzio->file, footer, FOOTER_MAGIC_SIZE) !=
-      FOOTER_MAGIC_SIZE
+  if (grub_file_read (xzio->file, footer, FOOTER_MAGIC_SIZE)
+      != FOOTER_MAGIC_SIZE
       || grub_memcmp (footer, FOOTER_MAGIC, FOOTER_MAGIC_SIZE) != 0)
     goto ERROR;
 
@@ -150,8 +143,8 @@ test_footer (grub_file_t file)
 		  xzio->file->size - XZ_STREAM_FOOTER_SIZE - backsize);
 
   /* Test index marker.  */
-  if (grub_file_read (xzio->file, &imarker, sizeof (imarker)) !=
-      sizeof (imarker) && imarker != 0x00)
+  if (grub_file_read (xzio->file, &imarker, sizeof (imarker))
+      != sizeof (imarker) && imarker != 0x00)
     goto ERROR;
 
   if (read_vli (xzio->file, &records) <= 0)
@@ -172,12 +165,12 @@ test_footer (grub_file_t file)
   return 1;
 
 ERROR:
-  grub_error (GRUB_ERR_BAD_COMPRESSED_DATA, "bad footer magic");
   return 0;
 }
 
 static grub_file_t
-grub_xzio_open (grub_file_t io)
+grub_xzio_open (grub_file_t io,
+		const char *name __attribute__ ((unused)))
 {
   grub_file_t file;
   grub_xzio_t xzio;
@@ -194,12 +187,9 @@ grub_xzio_open (grub_file_t io)
     }
 
   xzio->file = io;
-  xzio->saved_offset = 0;
 
   file->device = io->device;
-  file->offset = 0;
   file->data = xzio;
-  file->read_hook = 0;
   file->fs = &grub_xzio_fs;
   file->size = GRUB_FILE_SIZE_UNKNOWN;
   file->not_easily_seekable = 1;
@@ -218,10 +208,7 @@ grub_xzio_open (grub_file_t io)
     }
 
   xzio->buf.in = xzio->inbuf;
-  xzio->buf.in_pos = 0;
-  xzio->buf.in_size = 0;
   xzio->buf.out = xzio->outbuf;
-  xzio->buf.out_pos = 0;
   xzio->buf.out_size = XZBUFSIZ;
 
   /* FIXME: don't test footer on not easily seekable files.  */
@@ -264,9 +251,9 @@ grub_xzio_read (grub_file_t file, char *buf, grub_size_t len)
 
   while (len > 0)
     {
-      xzio->buf.out_size = grub_min (file->offset + ret + len - current_offset,
-				     XZBUFSIZ);
-
+      xzio->buf.out_size = file->offset + ret + len - current_offset;
+      if (xzio->buf.out_size > XZBUFSIZ)
+	xzio->buf.out_size = XZBUFSIZ;
       /* Feed input.  */
       if (xzio->buf.in_pos == xzio->buf.in_size)
 	{
@@ -286,7 +273,7 @@ grub_xzio_read (grub_file_t file, char *buf, grub_size_t len)
 	case XZ_DATA_ERROR:
 	case XZ_BUF_ERROR:
 	  grub_error (GRUB_ERR_BAD_COMPRESSED_DATA,
-		      "file corrupted or unsupported block options");
+		      N_("xz file corrupted or unsupported block options"));
 	  return -1;
 	default:
 	  break;
@@ -332,6 +319,7 @@ grub_xzio_close (grub_file_t file)
 
   /* Device must not be closed twice.  */
   file->device = 0;
+  file->name = 0;
   return grub_errno;
 }
 

@@ -42,6 +42,7 @@
 #include <grub/file.h>
 #include <grub/dl.h>
 #include <grub/deflate.h>
+#include <grub/i18n.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -193,10 +194,7 @@ test_gzip_header (grub_file_t file)
   if (grub_file_read (gzio->file, &hdr, 10) != 10
       || ((hdr.magic != GZIP_MAGIC)
 	  && (hdr.magic != OLD_GZIP_MAGIC)))
-    {
-      grub_error (GRUB_ERR_BAD_FILE_TYPE, "no gzip magic found");
-      return 0;
-    }
+    return 0;
 
   /*
    *  This does consistency checking on the header data.  If a
@@ -211,10 +209,7 @@ test_gzip_header (grub_file_t file)
 			    grub_le_to_cpu16 (extra_len))))
       || ((hdr.flags & ORIG_NAME) && eat_field (gzio->file, -1))
       || ((hdr.flags & COMMENT) && eat_field (gzio->file, -1)))
-    {
-      grub_error (GRUB_ERR_BAD_COMPRESSED_DATA, "unsupported gzip format");
-      return 0;
-    }
+    return 0;
 
   gzio->data_offset = grub_file_tell (gzio->file);
 
@@ -222,10 +217,7 @@ test_gzip_header (grub_file_t file)
   {
     grub_file_seek (gzio->file, grub_file_size (gzio->file) - 4);
     if (grub_file_read (gzio->file, &orig_len, 4) != 4)
-      {
-	grub_error (GRUB_ERR_BAD_FILE_TYPE, "unsupported gzip format");
-	return 0;
-      }
+      return 0;
     /* FIXME: this does not handle files whose original size is over 4GB.
        But how can we know the real original size?  */
     file->size = grub_le_to_cpu32 (orig_len);
@@ -384,8 +376,9 @@ get_byte (grub_gzio_t gzio)
       return 0;
     }
 
-  if (grub_file_tell (gzio->file) == (grub_off_t) gzio->data_offset
-      || gzio->inbuf_d == INBUFSIZ)
+  if (gzio->file && (grub_file_tell (gzio->file)
+		     == (grub_off_t) gzio->data_offset
+		     || gzio->inbuf_d == INBUFSIZ))
     {
       gzio->inbuf_d = 0;
       grub_file_read (gzio->file, gzio->inbuf, INBUFSIZ);
@@ -401,9 +394,9 @@ gzio_seek (grub_gzio_t gzio, grub_off_t off)
     {
       if (off > gzio->mem_input_size)
 	grub_error (GRUB_ERR_OUT_OF_RANGE,
-		    "attempt to seek outside of the file");
+		    N_("attempt to seek outside of the file"));
       else
-	gzio->mem_input_off = gzio->data_offset;
+	gzio->mem_input_off = off;
     }
   else
     grub_file_seek (gzio->file, off);
@@ -549,7 +542,7 @@ huft_build (unsigned *b,	/* code lengths in bits (all assumed <= BMAX) */
 	      z = 1 << j;	/* table entries for j-bit table */
 
 	      /* allocate and link in new table */
-	      q = (struct huft *) grub_malloc ((z + 1) * sizeof (struct huft));
+	      q = (struct huft *) grub_zalloc ((z + 1) * sizeof (struct huft));
 	      if (! q)
 		{
 		  if (h)
@@ -1100,7 +1093,7 @@ inflate_window (grub_gzio_t gzio)
 	}
     }
 
-  gzio->saved_offset += WSIZE;
+  gzio->saved_offset += gzio->wp;
 
   /* XXX do CRC calculation here! */
 }
@@ -1123,6 +1116,8 @@ initialize_tables (grub_gzio_t gzio)
   /* Reset memory allocation stuff.  */
   huft_free (gzio->tl);
   huft_free (gzio->td);
+  gzio->tl = NULL;
+  gzio->td = NULL;
 }
 
 
@@ -1130,12 +1125,12 @@ initialize_tables (grub_gzio_t gzio)
    even if IO does not contain data compressed by gzip, return a valid file
    object. Note that this function won't close IO, even if an error occurs.  */
 static grub_file_t
-grub_gzio_open (grub_file_t io)
+grub_gzio_open (grub_file_t io, const char *name __attribute__ ((unused)))
 {
   grub_file_t file;
   grub_gzio_t gzio = 0;
 
-  file = (grub_file_t) grub_malloc (sizeof (*file));
+  file = (grub_file_t) grub_zalloc (sizeof (*file));
   if (! file)
     return 0;
 
@@ -1149,23 +1144,18 @@ grub_gzio_open (grub_file_t io)
   gzio->file = io;
 
   file->device = io->device;
-  file->offset = 0;
   file->data = gzio;
-  file->read_hook = 0;
   file->fs = &grub_gzio_fs;
   file->not_easily_seekable = 1;
 
   if (! test_gzip_header (file))
     {
+      grub_errno = GRUB_ERR_NONE;
       grub_free (gzio);
       grub_free (file);
       grub_file_seek (io, 0);
 
-      if (grub_errno == GRUB_ERR_BAD_FILE_TYPE)
-	{
-	  grub_errno = GRUB_ERR_NONE;
-	  return io;
-	}
+      return io;
     }
 
   return file;
@@ -1182,20 +1172,22 @@ test_zlib_header (grub_gzio_t gzio)
   /* Check that compression method is DEFLATE.  */
   if ((cmf & 0xf) != DEFLATED)
     {
-      grub_error (GRUB_ERR_BAD_COMPRESSED_DATA, "unsupported gzip format");
+      /* TRANSLATORS: It's about given file having some strange format, not
+	 complete lack of gzip support.  */
+      grub_error (GRUB_ERR_BAD_COMPRESSED_DATA, N_("unsupported gzip format"));
       return 0;
     }
 
-  if ((cmf * 256 + flg) % 31)
+  if ((cmf * 256U + flg) % 31U)
     {
-      grub_error (GRUB_ERR_BAD_COMPRESSED_DATA, "unsupported gzip format");
+      grub_error (GRUB_ERR_BAD_COMPRESSED_DATA, N_("unsupported gzip format"));
       return 0;
     }
 
   /* Dictionary isn't supported.  */
   if (flg & 0x20)
     {
-      grub_error (GRUB_ERR_BAD_COMPRESSED_DATA, "unsupported gzip format");
+      grub_error (GRUB_ERR_BAD_COMPRESSED_DATA, N_("unsupported gzip format"));
       return 0;
     }
 
@@ -1227,7 +1219,14 @@ grub_gzio_read_real (grub_gzio_t gzio, grub_off_t offset,
       register char *srcaddr;
 
       while (offset >= gzio->saved_offset)
-	inflate_window (gzio);
+	{
+	  inflate_window (gzio);
+	  if (gzio->wp == 0)
+	    goto out;
+	}
+
+      if (gzio->wp == 0)
+	goto out;
 
       srcaddr = (char *) ((offset & (WSIZE - 1)) + gzio->slide);
       size = gzio->saved_offset - offset;
@@ -1242,6 +1241,7 @@ grub_gzio_read_real (grub_gzio_t gzio, grub_off_t offset,
       offset += size;
     }
 
+ out:
   if (grub_errno != GRUB_ERR_NONE)
     ret = -1;
 
@@ -1251,7 +1251,15 @@ grub_gzio_read_real (grub_gzio_t gzio, grub_off_t offset,
 static grub_ssize_t
 grub_gzio_read (grub_file_t file, char *buf, grub_size_t len)
 {
-  return grub_gzio_read_real (file->data, file->offset, buf, len);
+  grub_ssize_t ret;
+  ret = grub_gzio_read_real (file->data, file->offset, buf, len);
+
+  if (!grub_errno && ret != (grub_ssize_t) len)
+    {
+      grub_error (GRUB_ERR_BAD_COMPRESSED_DATA, "premature end of compressed");
+      ret = -1;
+    }
+  return ret;
 }
 
 /* Release everything, including the underlying file object.  */
@@ -1267,6 +1275,7 @@ grub_gzio_close (grub_file_t file)
 
   /* No need to close the same device twice.  */
   file->device = 0;
+  file->name = 0;
 
   return grub_errno;
 }
@@ -1295,6 +1304,28 @@ grub_zlib_decompress (char *inbuf, grub_size_t insize, grub_off_t off,
   grub_free (gzio);
 
   /* FIXME: Check Adler.  */
+  return ret;
+}
+
+grub_ssize_t
+grub_deflate_decompress (char *inbuf, grub_size_t insize, grub_off_t off,
+			 char *outbuf, grub_size_t outsize)
+{
+  grub_gzio_t gzio = 0;
+  grub_ssize_t ret;
+
+  gzio = grub_zalloc (sizeof (*gzio));
+  if (! gzio)
+    return -1;
+  gzio->mem_input = (grub_uint8_t *) inbuf;
+  gzio->mem_input_size = insize;
+  gzio->mem_input_off = 0;
+
+  initialize_tables (gzio);
+
+  ret = grub_gzio_read_real (gzio, off, outbuf, outsize);
+  grub_free (gzio);
+
   return ret;
 }
 

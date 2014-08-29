@@ -145,6 +145,7 @@ typedef struct
 #define ELFOSABI_TRU64		10	/* Compaq TRU64 UNIX.  */
 #define ELFOSABI_MODESTO	11	/* Novell Modesto.  */
 #define ELFOSABI_OPENBSD	12	/* OpenBSD.  */
+#define ELFOSABI_ARM_AEABI	64	/* ARM EABI */
 #define ELFOSABI_ARM		97	/* ARM */
 #define ELFOSABI_STANDALONE	255	/* Standalone (embedded) application */
 
@@ -245,6 +246,7 @@ typedef struct
 #define EM_ARC_A5	93		/* ARC Cores Tangent-A5 */
 #define EM_XTENSA	94		/* Tensilica Xtensa Architecture */
 #define EM_NUM		95
+#define EM_AARCH64	183		/* ARM 64-bit architecture */
 
 /* If it is necessary to assign new unofficial EM_* values, please
    pick large random numbers (0x8523, 0xa7f2, etc.) to minimize the
@@ -1130,6 +1132,7 @@ typedef struct
 #define R_X86_64_PC16		13
 #define R_X86_64_8		14
 #define R_X86_64_PC8		15
+#define R_X86_64_PC64		24
 
 /* Legal values for ST_TYPE subfield of st_info (symbol type).  */
 
@@ -1855,148 +1858,148 @@ typedef Elf32_Addr Elf32_Conflict;
 						   flag */
 
 /* PowerPC relocations defined by the ABIs */
-#define R_PPC_NONE		0
-#define R_PPC_ADDR32		1	/* 32bit absolute address */
-#define R_PPC_ADDR24		2	/* 26bit address, 2 bits ignored.  */
-#define R_PPC_ADDR16		3	/* 16bit absolute address */
-#define R_PPC_ADDR16_LO		4	/* lower 16bit of absolute address */
-#define R_PPC_ADDR16_HI		5	/* high 16bit of absolute address */
-#define R_PPC_ADDR16_HA		6	/* adjusted high 16bit */
-#define R_PPC_ADDR14		7	/* 16bit address, 2 bits ignored */
-#define R_PPC_ADDR14_BRTAKEN	8
-#define R_PPC_ADDR14_BRNTAKEN	9
-#define R_PPC_REL24		10	/* PC relative 26 bit */
-#define R_PPC_REL14		11	/* PC relative 16 bit */
-#define R_PPC_REL14_BRTAKEN	12
-#define R_PPC_REL14_BRNTAKEN	13
-#define R_PPC_GOT16		14
-#define R_PPC_GOT16_LO		15
-#define R_PPC_GOT16_HI		16
-#define R_PPC_GOT16_HA		17
-#define R_PPC_PLTREL24		18
-#define R_PPC_COPY		19
-#define R_PPC_GLOB_DAT		20
-#define R_PPC_JMP_SLOT		21
-#define R_PPC_RELATIVE		22
-#define R_PPC_LOCAL24PC		23
-#define R_PPC_UADDR32		24
-#define R_PPC_UADDR16		25
-#define R_PPC_REL32		26
-#define R_PPC_PLT32		27
-#define R_PPC_PLTREL32		28
-#define R_PPC_PLT16_LO		29
-#define R_PPC_PLT16_HI		30
-#define R_PPC_PLT16_HA		31
-#define R_PPC_SDAREL16		32
-#define R_PPC_SECTOFF		33
-#define R_PPC_SECTOFF_LO	34
-#define R_PPC_SECTOFF_HI	35
-#define R_PPC_SECTOFF_HA	36
+#define GRUB_ELF_R_PPC_NONE		0
+#define GRUB_ELF_R_PPC_ADDR32		1	/* 32bit absolute address */
+#define GRUB_ELF_R_PPC_ADDR24		2	/* 26bit address, 2 bits ignored.  */
+#define GRUB_ELF_R_PPC_ADDR16		3	/* 16bit absolute address */
+#define GRUB_ELF_R_PPC_ADDR16_LO		4	/* lower 16bit of absolute address */
+#define GRUB_ELF_R_PPC_ADDR16_HI		5	/* high 16bit of absolute address */
+#define GRUB_ELF_R_PPC_ADDR16_HA		6	/* adjusted high 16bit */
+#define GRUB_ELF_R_PPC_ADDR14		7	/* 16bit address, 2 bits ignored */
+#define GRUB_ELF_R_PPC_ADDR14_BRTAKEN	8
+#define GRUB_ELF_R_PPC_ADDR14_BRNTAKEN	9
+#define GRUB_ELF_R_PPC_REL24		10	/* PC relative 26 bit */
+#define GRUB_ELF_R_PPC_REL14		11	/* PC relative 16 bit */
+#define GRUB_ELF_R_PPC_REL14_BRTAKEN	12
+#define GRUB_ELF_R_PPC_REL14_BRNTAKEN	13
+#define GRUB_ELF_R_PPC_GOT16		14
+#define GRUB_ELF_R_PPC_GOT16_LO		15
+#define GRUB_ELF_R_PPC_GOT16_HI		16
+#define GRUB_ELF_R_PPC_GOT16_HA		17
+#define GRUB_ELF_R_PPC_PLTREL24		18
+#define GRUB_ELF_R_PPC_COPY		19
+#define GRUB_ELF_R_PPC_GLOB_DAT		20
+#define GRUB_ELF_R_PPC_JMP_SLOT		21
+#define GRUB_ELF_R_PPC_RELATIVE		22
+#define GRUB_ELF_R_PPC_LOCAL24PC		23
+#define GRUB_ELF_R_PPC_UADDR32		24
+#define GRUB_ELF_R_PPC_UADDR16		25
+#define GRUB_ELF_R_PPC_REL32		26
+#define GRUB_ELF_R_PPC_PLT32		27
+#define GRUB_ELF_R_PPC_PLTREL32		28
+#define GRUB_ELF_R_PPC_PLT16_LO		29
+#define GRUB_ELF_R_PPC_PLT16_HI		30
+#define GRUB_ELF_R_PPC_PLT16_HA		31
+#define GRUB_ELF_R_PPC_SDAREL16		32
+#define GRUB_ELF_R_PPC_SECTOFF		33
+#define GRUB_ELF_R_PPC_SECTOFF_LO	34
+#define GRUB_ELF_R_PPC_SECTOFF_HI	35
+#define GRUB_ELF_R_PPC_SECTOFF_HA	36
 /* Keep this the last entry.  */
-#define R_PPC_NUM		37
+#define GRUB_ELF_R_PPC_NUM		37
 
 /* PowerPC64 relocations defined by the ABIs */
-#define R_PPC64_NONE    R_PPC_NONE
-#define R_PPC64_ADDR32  R_PPC_ADDR32  /* 32bit absolute address.  */
-#define R_PPC64_ADDR24  R_PPC_ADDR24  /* 26bit address, word aligned.  */
-#define R_PPC64_ADDR16  R_PPC_ADDR16  /* 16bit absolute address. */
-#define R_PPC64_ADDR16_LO R_PPC_ADDR16_LO /* lower 16bits of abs. address.  */
-#define R_PPC64_ADDR16_HI R_PPC_ADDR16_HI /* high 16bits of abs. address. */
-#define R_PPC64_ADDR16_HA R_PPC_ADDR16_HA /* adjusted high 16bits.  */
-#define R_PPC64_ADDR14 R_PPC_ADDR14   /* 16bit address, word aligned.  */
-#define R_PPC64_ADDR14_BRTAKEN  R_PPC_ADDR14_BRTAKEN
-#define R_PPC64_ADDR14_BRNTAKEN R_PPC_ADDR14_BRNTAKEN
-#define R_PPC64_REL24   R_PPC_REL24 /* PC relative 26 bit, word aligned.  */
-#define R_PPC64_REL14   R_PPC_REL14 /* PC relative 16 bit. */
-#define R_PPC64_REL14_BRTAKEN   R_PPC_REL14_BRTAKEN
-#define R_PPC64_REL14_BRNTAKEN  R_PPC_REL14_BRNTAKEN
-#define R_PPC64_GOT16     R_PPC_GOT16
-#define R_PPC64_GOT16_LO  R_PPC_GOT16_LO
-#define R_PPC64_GOT16_HI  R_PPC_GOT16_HI
-#define R_PPC64_GOT16_HA  R_PPC_GOT16_HA
+#define GRUB_ELF_R_PPC64_NONE    GRUB_ELF_R_PPC_NONE
+#define GRUB_ELF_R_PPC64_ADDR32  GRUB_ELF_R_PPC_ADDR32  /* 32bit absolute address.  */
+#define GRUB_ELF_R_PPC64_ADDR24  GRUB_ELF_R_PPC_ADDR24  /* 26bit address, word aligned.  */
+#define GRUB_ELF_R_PPC64_ADDR16  GRUB_ELF_R_PPC_ADDR16  /* 16bit absolute address. */
+#define GRUB_ELF_R_PPC64_ADDR16_LO GRUB_ELF_R_PPC_ADDR16_LO /* lower 16bits of abs. address.  */
+#define GRUB_ELF_R_PPC64_ADDR16_HI GRUB_ELF_R_PPC_ADDR16_HI /* high 16bits of abs. address. */
+#define GRUB_ELF_R_PPC64_ADDR16_HA GRUB_ELF_R_PPC_ADDR16_HA /* adjusted high 16bits.  */
+#define GRUB_ELF_R_PPC64_ADDR14 GRUB_ELF_R_PPC_ADDR14   /* 16bit address, word aligned.  */
+#define GRUB_ELF_R_PPC64_ADDR14_BRTAKEN  GRUB_ELF_R_PPC_ADDR14_BRTAKEN
+#define GRUB_ELF_R_PPC64_ADDR14_BRNTAKEN GRUB_ELF_R_PPC_ADDR14_BRNTAKEN
+#define GRUB_ELF_R_PPC64_REL24   GRUB_ELF_R_PPC_REL24 /* PC relative 26 bit, word aligned.  */
+#define GRUB_ELF_R_PPC64_REL14   GRUB_ELF_R_PPC_REL14 /* PC relative 16 bit. */
+#define GRUB_ELF_R_PPC64_REL14_BRTAKEN   GRUB_ELF_R_PPC_REL14_BRTAKEN
+#define GRUB_ELF_R_PPC64_REL14_BRNTAKEN  GRUB_ELF_R_PPC_REL14_BRNTAKEN
+#define GRUB_ELF_R_PPC64_GOT16     GRUB_ELF_R_PPC_GOT16
+#define GRUB_ELF_R_PPC64_GOT16_LO  GRUB_ELF_R_PPC_GOT16_LO
+#define GRUB_ELF_R_PPC64_GOT16_HI  GRUB_ELF_R_PPC_GOT16_HI
+#define GRUB_ELF_R_PPC64_GOT16_HA  GRUB_ELF_R_PPC_GOT16_HA
 
-#define R_PPC64_COPY      R_PPC_COPY
-#define R_PPC64_GLOB_DAT  R_PPC_GLOB_DAT
-#define R_PPC64_JMP_SLOT  R_PPC_JMP_SLOT
-#define R_PPC64_RELATIVE  R_PPC_RELATIVE
+#define GRUB_ELF_R_PPC64_COPY      GRUB_ELF_R_PPC_COPY
+#define GRUB_ELF_R_PPC64_GLOB_DAT  GRUB_ELF_R_PPC_GLOB_DAT
+#define GRUB_ELF_R_PPC64_JMP_SLOT  GRUB_ELF_R_PPC_JMP_SLOT
+#define GRUB_ELF_R_PPC64_RELATIVE  GRUB_ELF_R_PPC_RELATIVE
 
-#define R_PPC64_UADDR32   R_PPC_UADDR32
-#define R_PPC64_UADDR16   R_PPC_UADDR16
-#define R_PPC64_REL32     R_PPC_REL32
-#define R_PPC64_PLT32     R_PPC_PLT32
-#define R_PPC64_PLTREL32  R_PPC_PLTREL32
-#define R_PPC64_PLT16_LO  R_PPC_PLT16_LO
-#define R_PPC64_PLT16_HI  R_PPC_PLT16_HI
-#define R_PPC64_PLT16_HA  R_PPC_PLT16_HA
+#define GRUB_ELF_R_PPC64_UADDR32   GRUB_ELF_R_PPC_UADDR32
+#define GRUB_ELF_R_PPC64_UADDR16   GRUB_ELF_R_PPC_UADDR16
+#define GRUB_ELF_R_PPC64_REL32     GRUB_ELF_R_PPC_REL32
+#define GRUB_ELF_R_PPC64_PLT32     GRUB_ELF_R_PPC_PLT32
+#define GRUB_ELF_R_PPC64_PLTREL32  GRUB_ELF_R_PPC_PLTREL32
+#define GRUB_ELF_R_PPC64_PLT16_LO  GRUB_ELF_R_PPC_PLT16_LO
+#define GRUB_ELF_R_PPC64_PLT16_HI  GRUB_ELF_R_PPC_PLT16_HI
+#define GRUB_ELF_R_PPC64_PLT16_HA  GRUB_ELF_R_PPC_PLT16_HA
 
-#define R_PPC64_SECTOFF     R_PPC_SECTOFF
-#define R_PPC64_SECTOFF_LO  R_PPC_SECTOFF_LO
-#define R_PPC64_SECTOFF_HI  R_PPC_SECTOFF_HI
-#define R_PPC64_SECTOFF_HA  R_PPC_SECTOFF_HA
-#define R_PPC64_ADDR30          37  /* word30 (S + A - P) >> 2.  */
-#define R_PPC64_ADDR64          38  /* doubleword64 S + A.  */
-#define R_PPC64_ADDR16_HIGHER   39  /* half16 #higher(S + A).  */
-#define R_PPC64_ADDR16_HIGHERA  40  /* half16 #highera(S + A).  */
-#define R_PPC64_ADDR16_HIGHEST  41  /* half16 #highest(S + A).  */
-#define R_PPC64_ADDR16_HIGHESTA 42  /* half16 #highesta(S + A). */
-#define R_PPC64_UADDR64     43  /* doubleword64 S + A.  */
-#define R_PPC64_REL64       44  /* doubleword64 S + A - P.  */
-#define R_PPC64_PLT64       45  /* doubleword64 L + A.  */
-#define R_PPC64_PLTREL64    46  /* doubleword64 L + A - P.  */
-#define R_PPC64_TOC16       47  /* half16* S + A - .TOC.  */
-#define R_PPC64_TOC16_LO    48  /* half16 #lo(S + A - .TOC.).  */
-#define R_PPC64_TOC16_HI    49  /* half16 #hi(S + A - .TOC.).  */
-#define R_PPC64_TOC16_HA    50  /* half16 #ha(S + A - .TOC.).  */
-#define R_PPC64_TOC         51  /* doubleword64 .TOC. */
-#define R_PPC64_PLTGOT16    52  /* half16* M + A.  */
-#define R_PPC64_PLTGOT16_LO 53  /* half16 #lo(M + A).  */
-#define R_PPC64_PLTGOT16_HI 54  /* half16 #hi(M + A).  */
-#define R_PPC64_PLTGOT16_HA 55  /* half16 #ha(M + A).  */
+#define GRUB_ELF_R_PPC64_SECTOFF     GRUB_ELF_R_PPC_SECTOFF
+#define GRUB_ELF_R_PPC64_SECTOFF_LO  GRUB_ELF_R_PPC_SECTOFF_LO
+#define GRUB_ELF_R_PPC64_SECTOFF_HI  GRUB_ELF_R_PPC_SECTOFF_HI
+#define GRUB_ELF_R_PPC64_SECTOFF_HA  GRUB_ELF_R_PPC_SECTOFF_HA
+#define GRUB_ELF_R_PPC64_ADDR30          37  /* word30 (S + A - P) >> 2.  */
+#define GRUB_ELF_R_PPC64_ADDR64          38  /* doubleword64 S + A.  */
+#define GRUB_ELF_R_PPC64_ADDR16_HIGHER   39  /* half16 #higher(S + A).  */
+#define GRUB_ELF_R_PPC64_ADDR16_HIGHERA  40  /* half16 #highera(S + A).  */
+#define GRUB_ELF_R_PPC64_ADDR16_HIGHEST  41  /* half16 #highest(S + A).  */
+#define GRUB_ELF_R_PPC64_ADDR16_HIGHESTA 42  /* half16 #highesta(S + A). */
+#define GRUB_ELF_R_PPC64_UADDR64     43  /* doubleword64 S + A.  */
+#define GRUB_ELF_R_PPC64_REL64       44  /* doubleword64 S + A - P.  */
+#define GRUB_ELF_R_PPC64_PLT64       45  /* doubleword64 L + A.  */
+#define GRUB_ELF_R_PPC64_PLTREL64    46  /* doubleword64 L + A - P.  */
+#define GRUB_ELF_R_PPC64_TOC16       47  /* half16* S + A - .TOC.  */
+#define GRUB_ELF_R_PPC64_TOC16_LO    48  /* half16 #lo(S + A - .TOC.).  */
+#define GRUB_ELF_R_PPC64_TOC16_HI    49  /* half16 #hi(S + A - .TOC.).  */
+#define GRUB_ELF_R_PPC64_TOC16_HA    50  /* half16 #ha(S + A - .TOC.).  */
+#define GRUB_ELF_R_PPC64_TOC         51  /* doubleword64 .TOC. */
+#define GRUB_ELF_R_PPC64_PLTGOT16    52  /* half16* M + A.  */
+#define GRUB_ELF_R_PPC64_PLTGOT16_LO 53  /* half16 #lo(M + A).  */
+#define GRUB_ELF_R_PPC64_PLTGOT16_HI 54  /* half16 #hi(M + A).  */
+#define GRUB_ELF_R_PPC64_PLTGOT16_HA 55  /* half16 #ha(M + A).  */
 
-#define R_PPC64_ADDR16_DS      56 /* half16ds* (S + A) >> 2.  */
-#define R_PPC64_ADDR16_LO_DS   57 /* half16ds  #lo(S + A) >> 2.  */
-#define R_PPC64_GOT16_DS       58 /* half16ds* (G + A) >> 2.  */
-#define R_PPC64_GOT16_LO_DS    59 /* half16ds  #lo(G + A) >> 2.  */
-#define R_PPC64_PLT16_LO_DS    60 /* half16ds  #lo(L + A) >> 2.  */
-#define R_PPC64_SECTOFF_DS     61 /* half16ds* (R + A) >> 2.  */
-#define R_PPC64_SECTOFF_LO_DS  62 /* half16ds  #lo(R + A) >> 2.  */
-#define R_PPC64_TOC16_DS       63 /* half16ds* (S + A - .TOC.) >> 2.  */
-#define R_PPC64_TOC16_LO_DS    64 /* half16ds  #lo(S + A - .TOC.) >> 2.  */
-#define R_PPC64_PLTGOT16_DS    65 /* half16ds* (M + A) >> 2.  */
-#define R_PPC64_PLTGOT16_LO_DS 66 /* half16ds  #lo(M + A) >> 2.  */
+#define GRUB_ELF_R_PPC64_ADDR16_DS      56 /* half16ds* (S + A) >> 2.  */
+#define GRUB_ELF_R_PPC64_ADDR16_LO_DS   57 /* half16ds  #lo(S + A) >> 2.  */
+#define GRUB_ELF_R_PPC64_GOT16_DS       58 /* half16ds* (G + A) >> 2.  */
+#define GRUB_ELF_R_PPC64_GOT16_LO_DS    59 /* half16ds  #lo(G + A) >> 2.  */
+#define GRUB_ELF_R_PPC64_PLT16_LO_DS    60 /* half16ds  #lo(L + A) >> 2.  */
+#define GRUB_ELF_R_PPC64_SECTOFF_DS     61 /* half16ds* (R + A) >> 2.  */
+#define GRUB_ELF_R_PPC64_SECTOFF_LO_DS  62 /* half16ds  #lo(R + A) >> 2.  */
+#define GRUB_ELF_R_PPC64_TOC16_DS       63 /* half16ds* (S + A - .TOC.) >> 2.  */
+#define GRUB_ELF_R_PPC64_TOC16_LO_DS    64 /* half16ds  #lo(S + A - .TOC.) >> 2.  */
+#define GRUB_ELF_R_PPC64_PLTGOT16_DS    65 /* half16ds* (M + A) >> 2.  */
+#define GRUB_ELF_R_PPC64_PLTGOT16_LO_DS 66 /* half16ds  #lo(M + A) >> 2.  */
 /* Keep this the last entry.  */
-#define R_PPC64_NUM		67
+#define GRUB_ELF_R_PPC64_NUM		67
 
 /* The remaining relocs are from the Embedded ELF ABI, and are not
    in the SVR4 ELF ABI.  */
-#define R_PPC_EMB_NADDR32	101
-#define R_PPC_EMB_NADDR16	102
-#define R_PPC_EMB_NADDR16_LO	103
-#define R_PPC_EMB_NADDR16_HI	104
-#define R_PPC_EMB_NADDR16_HA	105
-#define R_PPC_EMB_SDAI16	106
-#define R_PPC_EMB_SDA2I16	107
-#define R_PPC_EMB_SDA2REL	108
-#define R_PPC_EMB_SDA21		109	/* 16 bit offset in SDA */
-#define R_PPC_EMB_MRKREF	110
-#define R_PPC_EMB_RELSEC16	111
-#define R_PPC_EMB_RELST_LO	112
-#define R_PPC_EMB_RELST_HI	113
-#define R_PPC_EMB_RELST_HA	114
-#define R_PPC_EMB_BIT_FLD	115
-#define R_PPC_EMB_RELSDA	116	/* 16 bit relative offset in SDA */
+#define GRUB_ELF_R_PPC_EMB_NADDR32	101
+#define GRUB_ELF_R_PPC_EMB_NADDR16	102
+#define GRUB_ELF_R_PPC_EMB_NADDR16_LO	103
+#define GRUB_ELF_R_PPC_EMB_NADDR16_HI	104
+#define GRUB_ELF_R_PPC_EMB_NADDR16_HA	105
+#define GRUB_ELF_R_PPC_EMB_SDAI16	106
+#define GRUB_ELF_R_PPC_EMB_SDA2I16	107
+#define GRUB_ELF_R_PPC_EMB_SDA2REL	108
+#define GRUB_ELF_R_PPC_EMB_SDA21		109	/* 16 bit offset in SDA */
+#define GRUB_ELF_R_PPC_EMB_MRKREF	110
+#define GRUB_ELF_R_PPC_EMB_RELSEC16	111
+#define GRUB_ELF_R_PPC_EMB_RELST_LO	112
+#define GRUB_ELF_R_PPC_EMB_RELST_HI	113
+#define GRUB_ELF_R_PPC_EMB_RELST_HA	114
+#define GRUB_ELF_R_PPC_EMB_BIT_FLD	115
+#define GRUB_ELF_R_PPC_EMB_RELSDA	116	/* 16 bit relative offset in SDA */
 
 /* Diab tool relocations.  */
-#define R_PPC_DIAB_SDA21_LO	180	/* like EMB_SDA21, but lower 16 bit */
-#define R_PPC_DIAB_SDA21_HI	181	/* like EMB_SDA21, but high 16 bit */
-#define R_PPC_DIAB_SDA21_HA	182	/* like EMB_SDA21, adjusted high 16 */
-#define R_PPC_DIAB_RELSDA_LO	183	/* like EMB_RELSDA, but lower 16 bit */
-#define R_PPC_DIAB_RELSDA_HI	184	/* like EMB_RELSDA, but high 16 bit */
-#define R_PPC_DIAB_RELSDA_HA	185	/* like EMB_RELSDA, adjusted high 16 */
+#define GRUB_ELF_R_PPC_DIAB_SDA21_LO	180	/* like EMB_SDA21, but lower 16 bit */
+#define GRUB_ELF_R_PPC_DIAB_SDA21_HI	181	/* like EMB_SDA21, but high 16 bit */
+#define GRUB_ELF_R_PPC_DIAB_SDA21_HA	182	/* like EMB_SDA21, adjusted high 16 */
+#define GRUB_ELF_R_PPC_DIAB_RELSDA_LO	183	/* like EMB_RELSDA, but lower 16 bit */
+#define GRUB_ELF_R_PPC_DIAB_RELSDA_HI	184	/* like EMB_RELSDA, but high 16 bit */
+#define GRUB_ELF_R_PPC_DIAB_RELSDA_HA	185	/* like EMB_RELSDA, adjusted high 16 */
 
 /* This is a phony reloc to handle any old fashioned TOC16 references
    that may still be in object files.  */
-#define R_PPC_TOC16		255
+#define GRUB_ELF_R_PPC_TOC16		255
 
 /* PowerPC64 specific values for the Dyn d_tag field.  */
 #define DT_PPC64_GLINK  (DT_LOPROC + 0)
@@ -2005,15 +2008,18 @@ typedef Elf32_Addr Elf32_Conflict;
 /* ARM specific declarations */
 
 /* Processor specific flags for the ELF header e_flags field.  */
-#define EF_ARM_RELEXEC     0x01
-#define EF_ARM_HASENTRY    0x02
-#define EF_ARM_INTERWORK   0x04
-#define EF_ARM_APCS_26     0x08
-#define EF_ARM_APCS_FLOAT  0x10
-#define EF_ARM_PIC         0x20
-#define EF_ARM_ALIGN8      0x40		/* 8-bit structure alignment is in use */
-#define EF_ARM_NEW_ABI     0x80
-#define EF_ARM_OLD_ABI     0x100
+#define EF_ARM_RELEXEC     	0x01
+#define EF_ARM_HASENTRY    	0x02
+#define EF_ARM_INTERWORK   	0x04
+#define EF_ARM_APCS_26     	0x08
+#define EF_ARM_APCS_FLOAT  	0x10
+#define EF_ARM_PIC         	0x20
+#define EF_ARM_ALIGN8      	0x40 /* 8-bit structure alignment is in use */
+#define EF_ARM_NEW_ABI     	0x80
+#define EF_ARM_OLD_ABI     	0x100
+#define EF_ARM_SOFT_FLOAT	0x200
+#define EF_ARM_VFP_FLOAT	0x400
+#define EF_ARM_MAVERICK_FLOAT	0x800
 
 /* Other constants defined in the ARM ELF spec. version B-01.  */
 /* NB. These conflict with values defined above.  */
@@ -2022,13 +2028,21 @@ typedef Elf32_Addr Elf32_Conflict;
 #define EF_ARM_MAPSYMSFIRST	0x10
 #define EF_ARM_EABIMASK		0XFF000000
 
+/* Constants defined in AAELF.  */
+#define EF_ARM_BE8	    0x00800000
+#define EF_ARM_LE8	    0x00400000
+
 #define EF_ARM_EABI_VERSION(flags) ((flags) & EF_ARM_EABIMASK)
 #define EF_ARM_EABI_UNKNOWN  0x00000000
 #define EF_ARM_EABI_VER1     0x01000000
 #define EF_ARM_EABI_VER2     0x02000000
+#define EF_ARM_EABI_VER3     0x03000000
+#define EF_ARM_EABI_VER4     0x04000000
+#define EF_ARM_EABI_VER5     0x05000000
 
 /* Additional symbol types for Thumb */
-#define STT_ARM_TFUNC      0xd
+#define STT_ARM_TFUNC	     STT_LOPROC /* A Thumb function.  */
+#define STT_ARM_16BIT	     STT_HIPROC /* A Thumb label.  */
 
 /* ARM-specific values for sh_flags */
 #define SHF_ARM_ENTRYSECT  0x10000000   /* Section contains an entry point */
@@ -2038,50 +2052,172 @@ typedef Elf32_Addr Elf32_Conflict;
 /* ARM-specific program header flags */
 #define PF_ARM_SB          0x10000000   /* Segment contains the location
 					   addressed by the static base */
+#define PF_ARM_PI	   0x20000000   /* Position-independent segment.  */
+#define PF_ARM_ABS	   0x40000000   /* Absolute segment.  */
+
+/* Processor specific values for the Phdr p_type field.  */
+#define PT_ARM_EXIDX		(PT_LOPROC + 1)	/* ARM unwind segment.  */
+
+/* Processor specific values for the Shdr sh_type field.  */
+#define SHT_ARM_EXIDX		(SHT_LOPROC + 1) /* ARM unwind section.  */
+#define SHT_ARM_PREEMPTMAP	(SHT_LOPROC + 2) /* Preemption details.  */
+#define SHT_ARM_ATTRIBUTES	(SHT_LOPROC + 3) /* ARM attributes section.  */
+
+
+/* AArch64 relocs.  */
+#define R_AARCH64_NONE			0	/* No relocation.  */
+#define R_AARCH64_ABS64			257	/* Direct 64 bit. */
+#define R_AARCH64_ABS32			258	/* Direct 32 bit.  */
+#define R_AARCH64_JUMP26		282	/* 26-bit relative. */
+#define R_AARCH64_CALL26		283	/* 26-bit relative. */
+#define R_AARCH64_COPY			1024	/* Copy symbol at runtime.  */
+#define R_AARCH64_GLOB_DAT		1025	/* Create GOT entry.  */
+#define R_AARCH64_JUMP_SLOT		1026	/* Create PLT entry.  */
+#define R_AARCH64_RELATIVE		1027	/* Adjust by program base.  */
+#define R_AARCH64_TLS_DTPMOD64		1028	/* Module number, 64 bit.  */
+#define R_AARCH64_TLS_DTPREL64		1029	/* Module-relative offset, 64 bit.  */
+#define R_AARCH64_TLS_TPREL64		1030	/* TP-relative offset, 64 bit.  */
+#define R_AARCH64_TLSDESC		1031	/* TLS Descriptor.  */
 
 /* ARM relocs.  */
 #define R_ARM_NONE		0	/* No reloc */
 #define R_ARM_PC24		1	/* PC relative 26 bit branch */
 #define R_ARM_ABS32		2	/* Direct 32 bit  */
 #define R_ARM_REL32		3	/* PC relative 32 bit */
-#define R_ARM_PC13		4
+#define R_ARM_LDR_PC_G0		4
 #define R_ARM_ABS16		5	/* Direct 16 bit */
 #define R_ARM_ABS12		6	/* Direct 12 bit */
 #define R_ARM_THM_ABS5		7
 #define R_ARM_ABS8		8	/* Direct 8 bit */
 #define R_ARM_SBREL32		9
-#define R_ARM_THM_PC22		10
+#define R_ARM_THM_CALL		10
 #define R_ARM_THM_PC8		11
-#define R_ARM_AMP_VCALL9	12
-#define R_ARM_SWI24		13
+#define R_ARM_BREL_ADJ		12
+#define R_ARM_TLS_DESC		13
 #define R_ARM_THM_SWI8		14
 #define R_ARM_XPC25		15
 #define R_ARM_THM_XPC22		16
+#define R_ARM_TLS_DTPMOD32	17
+#define R_ARM_TLS_DTPOFF32	18
+#define R_ARM_TLS_TPOFF32	19
 #define R_ARM_COPY		20	/* Copy symbol at runtime */
 #define R_ARM_GLOB_DAT		21	/* Create GOT entry */
 #define R_ARM_JUMP_SLOT		22	/* Create PLT entry */
 #define R_ARM_RELATIVE		23	/* Adjust by program base */
-#define R_ARM_GOTOFF		24	/* 32 bit offset to GOT */
-#define R_ARM_GOTPC		25	/* 32 bit PC relative offset to GOT */
-#define R_ARM_GOT32		26	/* 32 bit GOT entry */
+#define R_ARM_GOTOFF32		24	/* 32 bit offset to GOT */
+#define R_ARM_BASE_PREL		25	/* 32 bit PC relative offset to GOT */
+#define R_ARM_GOT_BREL		26	/* 32 bit GOT entry */
 #define R_ARM_PLT32		27	/* 32 bit PLT address */
+#define R_ARM_CALL		28
+#define R_ARM_JUMP24		29
+#define R_ARM_THM_JUMP24	30
+#define R_ARM_BASE_ABS		31
 #define R_ARM_ALU_PCREL_7_0	32
 #define R_ARM_ALU_PCREL_15_8	33
 #define R_ARM_ALU_PCREL_23_15	34
 #define R_ARM_LDR_SBREL_11_0	35
 #define R_ARM_ALU_SBREL_19_12	36
 #define R_ARM_ALU_SBREL_27_20	37
+#define R_ARM_TARGET1		38
+#define R_ARM_SBREL31		39
+#define R_ARM_V4BX		40
+#define R_ARM_TARGET2		41
+#define R_ARM_PREL31		42
+#define R_ARM_MOVW_ABS_NC	43
+#define R_ARM_MOVT_ABS		44
+#define R_ARM_MOVW_PREL_NC	45
+#define R_ARM_MOVT_PREL		46
+#define R_ARM_THM_MOVW_ABS_NC	47
+#define R_ARM_THM_MOVT_ABS	48
+#define R_ARM_THM_MOVW_PREL_NC	49
+#define R_ARM_THM_MOVT_PREL	50
+#define R_ARM_THM_JUMP19	51
+#define R_ARM_THM_JUMP6		52
+#define R_ARM_THM_ALU_PREL_11_0	53
+#define R_ARM_THM_PC12		54
+#define R_ARM_ABS32_NOI		55
+#define R_ARM_REL32_NOI		56
+#define R_ARM_ALU_PC_G0_NC	57
+#define R_ARM_ALU_PC_G0		58
+#define R_ARM_ALU_PC_G1_NC	59
+#define R_ARM_ALU_PC_G1		60
+#define R_ARM_ALU_PC_G2		61
+#define R_ARM_LDR_PC_G1		62
+#define R_ARM_LDR_PC_G2		63
+#define R_ARM_LDRS_PC_G0	64
+#define R_ARM_LDRS_PC_G1	65
+#define R_ARM_LDRS_PC_G2	66
+#define R_ARM_LDC_PC_G0		67
+#define R_ARM_LDC_PC_G1		68
+#define R_ARM_LDC_PC_G2		69
+#define R_ARM_ALU_SB_G0_NC	70
+#define R_ARM_ALU_SB_G0		71
+#define R_ARM_ALU_SB_G1_NC	72
+#define R_ARM_ALU_SB_G1		73
+#define R_ARM_ALU_SB_G2		74
+#define R_ARM_LDR_SB_G0		75
+#define R_ARM_LDR_SB_G1		76
+#define R_ARM_LDR_SB_G2		77
+#define R_ARM_LDRS_SB_G0	78
+#define R_ARM_LDRS_SB_G1	79
+#define R_ARM_LDRS_SB_G2	80
+#define R_ARM_LDC_SB_G0		81
+#define R_ARM_LDC_SB_G1		82
+#define R_ARM_LDC_SB_G2		83
+#define R_ARM_MOVW_BREL_NC	84
+#define R_ARM_MOVT_BREL		85
+#define R_ARM_MOVW_BREL		86
+#define R_ARM_THM_MOVW_BREL_NC	87
+#define R_ARM_THM_MOVT_BREL	88
+#define R_ARM_THM_MOVW_BREL	89
+#define R_ARM_TLS_GOTDESC	90
+#define R_ARM_TLS_CALL		91
+#define R_ARM_TLS_DESCSEQ	92
+#define R_ARM_THM_TLS_CALL	93
+#define R_ARM_PLT32_ABS		94
+#define R_ARM_GOT_ABS		95
+#define R_ARM_GOT_PREL		96
+#define R_ARM_GOT_BREL12	97
+#define R_ARM_GOTOFF12		98
+#define R_ARM_GOTRELAX		99
 #define R_ARM_GNU_VTENTRY	100
 #define R_ARM_GNU_VTINHERIT	101
-#define R_ARM_THM_PC11		102	/* thumb unconditional branch */
-#define R_ARM_THM_PC9		103	/* thumb conditional branch */
-#define R_ARM_RXPC25		249
-#define R_ARM_RSBREL32		250
-#define R_ARM_THM_RPC22		251
-#define R_ARM_RREL32		252
-#define R_ARM_RABS22		253
-#define R_ARM_RPC24		254
-#define R_ARM_RBASE		255
+#define R_ARM_THM_JUMP11	102	/* thumb unconditional branch */
+#define R_ARM_THM_JUMP8		103	/* thumb conditional branch */
+#define R_ARM_TLS_GD32		104	/* PC-rel 32 bit for global dynamic
+					   thread local data */
+#define R_ARM_TLS_LDM32		105	/* PC-rel 32 bit for local dynamic
+					   thread local data */
+#define R_ARM_TLS_LDO32		106	/* 32 bit offset relative to TLS
+					   block */
+#define R_ARM_TLS_IE32		107	/* PC-rel 32 bit for GOT entry of
+					   static TLS block offset */
+#define R_ARM_TLS_LE32		108	/* 32 bit offset relative to static
+					   TLS block */
+#define R_ARM_TLS_LDO12		109
+#define R_ARM_TLS_LE12		110
+#define R_ARM_IE12GP		111
+#define R_ARM_PRIVATE_0		112
+#define R_ARM_PRIVATE_1		113
+#define R_ARM_PRIVATE_2		114
+#define R_ARM_PRIVATE_3		115
+#define R_ARM_PRIVATE_4		116
+#define R_ARM_PRIVATE_5		117
+#define R_ARM_PRIVATE_6		118
+#define R_ARM_PRIVATE_7		119
+#define R_ARM_PRIVATE_8		120
+#define R_ARM_PRIVATE_9		121
+#define R_ARM_PRIVATE_10	122
+#define R_ARM_PRIVATE_11	123
+#define R_ARM_PRIVATE_12	124
+#define R_ARM_PRIVATE_13	125
+#define R_ARM_PRIVATE_14	126
+#define R_ARM_PRIVATE_15	127
+#define R_ARM_ME_TOO		128
+#define R_ARM_THM_TLS_DESCSEQ16	129
+#define R_ARM_THM_TLS_DESCSEQ32	130
+#define R_ARM_THM_GOT_BREL12	131
+#define R_ARM_IRELATIVE		140
 /* Keep this the last entry.  */
 #define R_ARM_NUM		256
 
@@ -2331,10 +2467,13 @@ typedef Elf32_Addr Elf32_Conflict;
 
 #define R_X86_64_NUM		24
 
+#ifdef GRUB_TARGET_WORDSIZE
 #if GRUB_TARGET_WORDSIZE == 32
 
 typedef Elf32_Addr Elf_Addr;
+typedef Elf32_Nhdr Elf_Nhdr;
 typedef Elf32_Ehdr Elf_Ehdr;
+typedef Elf32_Phdr Elf_Phdr;
 typedef Elf32_Half Elf_Half;
 typedef Elf32_Off Elf_Off;
 typedef Elf32_Rel Elf_Rel;
@@ -2348,6 +2487,8 @@ typedef Elf32_Xword Elf_Xword;
 
 #define ELF_ST_BIND(val)	ELF32_ST_BIND(val)
 #define ELF_ST_TYPE(val)	ELF32_ST_TYPE(val)
+#define ELF_ST_INFO(a,b)	ELF32_ST_INFO(a,b)
+
 #define ELF_R_SYM(val)		ELF32_R_SYM(val)
 #define ELF_R_TYPE(val)		ELF32_R_TYPE(val)
 #define ELF_R_INFO(sym, type)	ELF32_R_INFO(sym, type)
@@ -2355,7 +2496,9 @@ typedef Elf32_Xword Elf_Xword;
 #elif GRUB_TARGET_WORDSIZE == 64
 
 typedef Elf64_Addr Elf_Addr;
+typedef Elf64_Nhdr Elf_Nhdr;
 typedef Elf64_Ehdr Elf_Ehdr;
+typedef Elf64_Phdr Elf_Phdr;
 typedef Elf64_Half Elf_Half;
 typedef Elf64_Off Elf_Off;
 typedef Elf64_Rel Elf_Rel;
@@ -2369,10 +2512,12 @@ typedef Elf64_Xword Elf_Xword;
 
 #define ELF_ST_BIND(val)	ELF64_ST_BIND (val)
 #define ELF_ST_TYPE(val)	ELF64_ST_TYPE (val)
+#define ELF_ST_INFO(a,b)	ELF64_ST_INFO(a,b)
 #define ELF_R_SYM(val)		ELF64_R_SYM(val)
 #define ELF_R_TYPE(val)		ELF64_R_TYPE(val)
 #define ELF_R_INFO(sym, type)	ELF64_R_INFO(sym, type)
 
 #endif /* GRUB_TARGET_WORDSIZE == 64 */
+#endif
 
 #endif /* ! GRUB_ELF_H */

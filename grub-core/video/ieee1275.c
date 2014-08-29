@@ -40,9 +40,22 @@ static int have_setcolors = 0;
 static struct
 {
   struct grub_video_mode_info mode_info;
-  struct grub_video_render_target *render_target;
   grub_uint8_t *ptr;
 } framebuffer;
+
+static struct grub_video_palette_data serial_colors[] =
+  {
+    // {R, G, B}
+    {0x00, 0x00, 0x00, 0xFF}, // 0 = black
+    {0xA8, 0x00, 0x00, 0xFF}, // 1 = red
+    {0x00, 0xA8, 0x00, 0xFF}, // 2 = green
+    {0xFE, 0xFE, 0x54, 0xFF}, // 3 = yellow
+    {0x00, 0x00, 0xA8, 0xFF}, // 4 = blue
+    {0xA8, 0x00, 0xA8, 0xFF}, // 5 = magenta
+    {0x00, 0xA8, 0xA8, 0xFF}, // 6 = cyan
+    {0xFE, 0xFE, 0xFE, 0xFF}  // 7 = white
+  };
+
 
 static grub_err_t
 grub_video_ieee1275_set_palette (unsigned int start, unsigned int count,
@@ -55,22 +68,22 @@ set_video_mode (unsigned width __attribute__ ((unused)),
   /* TODO */
 }
 
+static int
+find_display_hook (struct grub_ieee1275_devalias *alias)
+{
+  if (grub_strcmp (alias->type, "display") == 0)
+    {
+      grub_dprintf ("video", "Found display %s\n", alias->path);
+      display = grub_strdup (alias->path);
+      return 1;
+    }
+  return 0;
+}
+
 static void
 find_display (void)
 {
-  auto int hook (struct grub_ieee1275_devalias *alias);
-  int hook (struct grub_ieee1275_devalias *alias)
-  {
-    if (grub_strcmp (alias->type, "display") == 0)
-      {
-	grub_dprintf ("video", "Found display %s\n", alias->path);
-	display = grub_strdup (alias->path);
-	return 1;
-      }
-    return 0;
-  }
-  
-  grub_ieee1275_devices_iterate (hook);
+  grub_ieee1275_devices_iterate (find_display_hook);
 }
 
 static grub_err_t
@@ -124,10 +137,62 @@ grub_video_ieee1275_fill_mode_info (grub_ieee1275_phandle_t dev,
     return grub_error (GRUB_ERR_IO, "Couldn't retrieve display pitch.");
   out->pitch = tmp;
 
-  out->mode_type = GRUB_VIDEO_MODE_TYPE_INDEX_COLOR;
-  out->bpp = 8;
-  out->bytes_per_pixel = 1;
+  if (grub_ieee1275_get_integer_property (dev, "depth", &tmp,
+					  sizeof (tmp), 0))
+    tmp = 4;
+
+  out->mode_type = GRUB_VIDEO_MODE_TYPE_RGB;
+  out->bpp = tmp;
+  out->bytes_per_pixel = (out->bpp + GRUB_CHAR_BIT - 1) / GRUB_CHAR_BIT;
   out->number_of_colors = 256;
+
+  switch (tmp)
+    {
+    case 4:
+    case 8:
+      out->mode_type = GRUB_VIDEO_MODE_TYPE_INDEX_COLOR;
+      out->bpp = 8;
+      if (have_setcolors)
+	out->number_of_colors = 1 << tmp;
+      else
+	out->number_of_colors = 8;
+      break;
+
+      /* FIXME: we may need byteswapping for the following. Currently it
+	 was seen only on qemu and no byteswap was needed.  */
+    case 15:
+      out->red_mask_size = 5;
+      out->red_field_pos = 10;
+      out->green_mask_size = 5;
+      out->green_field_pos = 5;
+      out->blue_mask_size = 5;
+      out->blue_field_pos = 0;
+      break;
+
+    case 16:
+      out->red_mask_size = 5;
+      out->red_field_pos = 11;
+      out->green_mask_size = 6;
+      out->green_field_pos = 5;
+      out->blue_mask_size = 5;
+      out->blue_field_pos = 0;
+      break;
+
+    case 32:
+      out->reserved_mask_size = 8;
+      out->reserved_field_pos = 24;
+
+    case 24:
+      out->red_mask_size = 8;
+      out->red_field_pos = 16;
+      out->green_mask_size = 8;
+      out->green_field_pos = 8;
+      out->blue_mask_size = 8;
+      out->blue_field_pos = 0;
+      break;
+    default:
+      return grub_error (GRUB_ERR_IO, "unsupported video depth %d", tmp);
+    }
 
   out->blit_format = grub_video_get_blit_format (out);
   return GRUB_ERR_NONE;
@@ -186,44 +251,17 @@ grub_video_ieee1275_setup (unsigned int width, unsigned int height,
   grub_dprintf ("video", "IEEE1275: initialising FB @ %p %dx%dx%d\n",
 		framebuffer.ptr, framebuffer.mode_info.width,
 		framebuffer.mode_info.height, framebuffer.mode_info.bpp);
-  
-  err = grub_video_fb_create_render_target_from_pointer 
-    (&framebuffer.render_target, &framebuffer.mode_info, framebuffer.ptr);
 
+  err = grub_video_fb_setup (mode_type, mode_mask,
+			     &framebuffer.mode_info,
+			     framebuffer.ptr, NULL, NULL);
   if (err)
-    {
-      grub_dprintf ("video", "IEEE1275: Couldn't create FB target\n");
-      return err;
-    }
-  
-  err = grub_video_fb_set_active_render_target (framebuffer.render_target);
-  
-  if (err)
-    {
-      grub_dprintf ("video", "IEEE1275: Couldn't set FB target\n");
-      return err;
-    }
+    return err;
 
-  grub_video_ieee1275_set_palette (0, GRUB_VIDEO_FBSTD_NUMCOLORS,
+  grub_video_ieee1275_set_palette (0, framebuffer.mode_info.number_of_colors,
 				   grub_video_fbstd_colors);
     
   return err;
-}
-
-static grub_err_t
-grub_video_ieee1275_swap_buffers (void)
-{
-  /* TODO: Implement buffer swapping.  */
-  return GRUB_ERR_NONE;
-}
-
-static grub_err_t
-grub_video_ieee1275_set_active_render_target (struct grub_video_render_target *target)
-{
-  if (target == GRUB_VIDEO_RENDER_TARGET_DISPLAY)
-    target = framebuffer.render_target;
-
-  return grub_video_fb_set_active_render_target (target);
 }
 
 static grub_err_t
@@ -242,25 +280,35 @@ static grub_err_t
 grub_video_ieee1275_set_palette (unsigned int start, unsigned int count,
 				 struct grub_video_palette_data *palette_data)
 {
-  grub_err_t err;
+  unsigned col;
   struct grub_video_palette_data fb_palette_data[256];
+  grub_err_t err;
+
+  if (!(framebuffer.mode_info.mode_type & GRUB_VIDEO_MODE_TYPE_INDEX_COLOR))
+    return grub_video_fb_set_palette (start, count, palette_data);
+
+  if (!have_setcolors)
+    return grub_video_fb_set_palette (0, ARRAY_SIZE (serial_colors),
+    				      serial_colors);
+
+  if (start >= framebuffer.mode_info.number_of_colors)
+    return GRUB_ERR_NONE;
+
+  if (start + count > framebuffer.mode_info.number_of_colors)
+    count = framebuffer.mode_info.number_of_colors - start;
 
   err = grub_video_fb_set_palette (start, count, palette_data);
   if (err)
     return err;
 
-  grub_video_fb_get_palette (0, ARRAY_SIZE (fb_palette_data), fb_palette_data);
-
   /* Set colors.  */
-  if (have_setcolors)
-    {
-      unsigned col;
-      for (col = 0; col < ARRAY_SIZE (fb_palette_data); col++)
-	grub_ieee1275_set_color (stdout_ihandle, col, fb_palette_data[col].r,
-				 fb_palette_data[col].g,
-				 fb_palette_data[col].b);
-    }
+  grub_video_fb_get_palette (0, ARRAY_SIZE (fb_palette_data),
+			     fb_palette_data);
 
+  for (col = 0; col < ARRAY_SIZE (fb_palette_data); col++)
+    grub_ieee1275_set_color (stdout_ihandle, col, fb_palette_data[col].r,
+			     fb_palette_data[col].g,
+			     fb_palette_data[col].b);
   return GRUB_ERR_NONE;
 }
 
@@ -269,6 +317,7 @@ static struct grub_video_adapter grub_video_ieee1275_adapter =
     .name = "IEEE1275 video driver",
 
     .prio = GRUB_VIDEO_ADAPTER_PRIO_FIRMWARE,
+    .id = GRUB_VIDEO_DRIVER_IEEE1275,
 
     .init = grub_video_ieee1275_init,
     .fini = grub_video_ieee1275_fini,
@@ -279,6 +328,10 @@ static struct grub_video_adapter grub_video_ieee1275_adapter =
     .get_palette = grub_video_fb_get_palette,
     .set_viewport = grub_video_fb_set_viewport,
     .get_viewport = grub_video_fb_get_viewport,
+    .set_region = grub_video_fb_set_region,
+    .get_region = grub_video_fb_get_region,
+    .set_area_status = grub_video_fb_set_area_status,
+    .get_area_status = grub_video_fb_get_area_status,
     .map_color = grub_video_fb_map_color,
     .map_rgb = grub_video_fb_map_rgb,
     .map_rgba = grub_video_fb_map_rgba,
@@ -287,10 +340,10 @@ static struct grub_video_adapter grub_video_ieee1275_adapter =
     .blit_bitmap = grub_video_fb_blit_bitmap,
     .blit_render_target = grub_video_fb_blit_render_target,
     .scroll = grub_video_fb_scroll,
-    .swap_buffers = grub_video_ieee1275_swap_buffers,
+    .swap_buffers = grub_video_fb_swap_buffers,
     .create_render_target = grub_video_fb_create_render_target,
     .delete_render_target = grub_video_fb_delete_render_target,
-    .set_active_render_target = grub_video_ieee1275_set_active_render_target,
+    .set_active_render_target = grub_video_fb_set_active_render_target,
     .get_active_render_target = grub_video_fb_get_active_render_target,
 
     .next = 0

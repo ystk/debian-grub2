@@ -21,9 +21,23 @@
 
 #include <grub/misc.h>
 #include <grub/file.h>
+#include <sys/types.h>
 
 typedef struct grub_file FILE;
 
 #define EOF    -1
+
+static inline int
+snprintf (char *str, grub_size_t n, const char *fmt, ...)
+{
+  va_list ap;
+  int ret;
+
+  va_start (ap, fmt);
+  ret = grub_vsnprintf (str, n, fmt, ap);
+  va_end (ap);
+
+  return ret;
+}
 
 #endif

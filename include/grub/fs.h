@@ -25,6 +25,10 @@
 #include <grub/types.h>
 
 #include <grub/list.h>
+/* For embedding types.  */
+#ifdef GRUB_UTIL
+#include <grub/partition.h>
+#endif
 
 /* Forward declaration is required, because of mutual reference.  */
 struct grub_file;
@@ -34,22 +38,28 @@ struct grub_dirhook_info
   unsigned dir:1;
   unsigned mtimeset:1;
   unsigned case_insensitive:1;
+  unsigned inodeset:1;
   grub_int32_t mtime;
+  grub_uint64_t inode;
 };
+
+typedef int (*grub_fs_dir_hook_t) (const char *filename,
+				   const struct grub_dirhook_info *info,
+				   void *data);
 
 /* Filesystem descriptor.  */
 struct grub_fs
 {
   /* The next filesystem.  */
   struct grub_fs *next;
+  struct grub_fs **prev;
 
   /* My name.  */
   const char *name;
 
   /* Call HOOK with each file under DIR.  */
   grub_err_t (*dir) (grub_device_t device, const char *path,
-		     int (*hook) (const char *filename,
-				  const struct grub_dirhook_info *info));
+		     grub_fs_dir_hook_t hook, void *hook_data);
 
   /* Open a file named NAME and initialize FILE.  */
   grub_err_t (*open) (struct grub_file *file, const char *name);
@@ -74,8 +84,17 @@ struct grub_fs
   grub_err_t (*mtime) (grub_device_t device, grub_int32_t *timebuf);
 
 #ifdef GRUB_UTIL
+  /* Determine sectors available for embedding.  */
+  grub_err_t (*embed) (grub_device_t device, unsigned int *nsectors,
+		       unsigned int max_nsectors,
+		       grub_embed_type_t embed_type,
+		       grub_disk_addr_t **sectors);
+
   /* Whether this filesystem reserves first sector for DOS-style boot.  */
   int reserved_first_sector;
+
+  /* Whether blocklist installs have a chance to work.  */
+  int blocklist_install;
 #endif
 };
 typedef struct grub_fs *grub_fs_t;
@@ -102,7 +121,7 @@ grub_fs_register (grub_fs_t fs)
 static inline void
 grub_fs_unregister (grub_fs_t fs)
 {
-  grub_list_remove (GRUB_AS_LIST_P (&grub_fs_list), GRUB_AS_LIST (fs));
+  grub_list_remove (GRUB_AS_LIST (fs));
 }
 
 #define FOR_FILESYSTEMS(var) FOR_LIST_ELEMENTS((var), (grub_fs_list))

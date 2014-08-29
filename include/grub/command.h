@@ -44,11 +44,15 @@ struct grub_command;
 typedef grub_err_t (*grub_command_func_t) (struct grub_command *cmd,
 					   int argc, char **argv);
 
+#define GRUB_COMMAND_PRIO_MASK	0xff
+#define GRUB_COMMAND_FLAG_ACTIVE	0x100
+
 /* The command description.  */
 struct grub_command
 {
   /* The next element.  */
   struct grub_command *next;
+  struct grub_command **prev;
 
   /* The name.  */
   const char *name;
@@ -117,6 +121,7 @@ grub_command_execute (const char *name, int argc, char **argv)
 }
 
 #define FOR_COMMANDS(var) FOR_LIST_ELEMENTS((var), grub_command_list)
+#define FOR_COMMANDS_SAFE(var, next) FOR_LIST_ELEMENTS_SAFE((var), (next), grub_command_list)
 
 void grub_register_core_commands (void);
 

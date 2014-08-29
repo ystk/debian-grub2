@@ -25,48 +25,46 @@
 #include <grub/i18n.h>
 
 /* Built-in parser for default options.  */
-#define SHORT_ARG_HELP	-100
-#define SHORT_ARG_USAGE	-101
-
 static const struct grub_arg_option help_options[] =
   {
-    {"help", SHORT_ARG_HELP, 0,
+    {"help", 0, 0,
      N_("Display this help and exit."), 0, ARG_TYPE_NONE},
-    {"usage", SHORT_ARG_USAGE, 0,
+    {"usage", 0, 0,
      N_("Display the usage of this command and exit."), 0, ARG_TYPE_NONE},
     {0, 0, 0, 0, 0, 0}
   };
 
-static struct grub_arg_option *
+/* Helper for find_short.  */
+static const struct grub_arg_option *
+fnd_short (const struct grub_arg_option *opt, char c)
+{
+  while (opt->doc)
+    {
+      if (opt->shortarg == c)
+	return opt;
+      opt++;
+    }
+  return 0;
+}
+
+static const struct grub_arg_option *
 find_short (const struct grub_arg_option *options, char c)
 {
-  struct grub_arg_option *found = 0;
-  auto struct grub_arg_option *fnd_short (const struct grub_arg_option *opt);
-
-  struct grub_arg_option *fnd_short (const struct grub_arg_option *opt)
-    {
-      while (opt->doc)
-	{
-	  if (opt->shortarg == c)
-	    return (struct grub_arg_option *) opt;
-	  opt++;
-	}
-      return 0;
-    }
+  const struct grub_arg_option *found = 0;
 
   if (options)
-    found = fnd_short (options);
+    found = fnd_short (options, c);
 
   if (! found)
     {
       switch (c)
 	{
 	case 'h':
-	  found = (struct grub_arg_option *) help_options;
+	  found = help_options;
 	  break;
 
 	case 'u':
-	  found = (struct grub_arg_option *) (help_options + 1);
+	  found = (help_options + 1);
 	  break;
 
 	default:
@@ -77,29 +75,30 @@ find_short (const struct grub_arg_option *options, char c)
   return found;
 }
 
-static struct grub_arg_option *
+/* Helper for find_long.  */
+static const struct grub_arg_option *
+fnd_long (const struct grub_arg_option *opt, const char *s, int len)
+{
+  while (opt->doc)
+    {
+      if (opt->longarg && ! grub_strncmp (opt->longarg, s, len) &&
+	  opt->longarg[len] == '\0')
+	return opt;
+      opt++;
+    }
+  return 0;
+}
+
+static const struct grub_arg_option *
 find_long (const struct grub_arg_option *options, const char *s, int len)
 {
-  struct grub_arg_option *found = 0;
-  auto struct grub_arg_option *fnd_long (const struct grub_arg_option *opt);
-
-  struct grub_arg_option *fnd_long (const struct grub_arg_option *opt)
-    {
-      while (opt->doc)
-	{
-	  if (opt->longarg && ! grub_strncmp (opt->longarg, s, len) &&
-	      opt->longarg[len] == '\0')
-	    return (struct grub_arg_option *) opt;
-	  opt++;
-	}
-      return 0;
-    }
+  const struct grub_arg_option *found = 0;
 
   if (options)
-    found = fnd_long (options);
+    found = fnd_long (options, s, len);
 
   if (! found)
-    found = fnd_long (help_options);
+    found = fnd_long (help_options, s, len);
 
   return found;
 }
@@ -110,69 +109,70 @@ show_usage (grub_extcmd_t cmd)
   grub_printf ("%s %s %s\n", _("Usage:"), cmd->cmd->name, _(cmd->cmd->summary));
 }
 
+static void
+showargs (const struct grub_arg_option *opt,
+	  int h_is_used, int u_is_used)
+{
+  for (; opt->doc; opt++)
+    {
+      int spacing = 20;
+
+      if (opt->shortarg && grub_isgraph (opt->shortarg))
+	grub_printf ("-%c%c ", opt->shortarg, opt->longarg ? ',':' ');
+      else if (opt == help_options && ! h_is_used)
+	grub_printf ("-h, ");
+      else if (opt == help_options + 1 && ! u_is_used)
+	grub_printf ("-u, ");
+      else
+	grub_printf ("    ");
+
+      if (opt->longarg)
+	{
+	  grub_printf ("--%s", opt->longarg);
+	  spacing -= grub_strlen (opt->longarg) + 2;
+
+	  if (opt->arg)
+	    {
+	      grub_printf ("=%s", opt->arg);
+	      spacing -= grub_strlen (opt->arg) + 1;
+	    }
+	}
+
+      if (spacing <= 0)
+	spacing = 3;
+
+      while (spacing--)
+	grub_xputs (" ");
+
+      grub_printf ("%s\n", _(opt->doc));
+    }
+}
+
 void
 grub_arg_show_help (grub_extcmd_t cmd)
 {
-  auto void showargs (const struct grub_arg_option *opt);
   int h_is_used = 0;
   int u_is_used = 0;
-
-  auto void showargs (const struct grub_arg_option *opt)
-    {
-      for (; opt->doc; opt++)
-	{
-	  int spacing = 20;
-
-	  if (opt->shortarg && grub_isgraph (opt->shortarg))
-	    grub_printf ("-%c%c ", opt->shortarg, opt->longarg ? ',':' ');
-	  else if (opt->shortarg == SHORT_ARG_HELP && ! h_is_used)
-	    grub_printf ("-h, ");
-	  else if (opt->shortarg == SHORT_ARG_USAGE && ! u_is_used)
-	    grub_printf ("-u, ");
-	  else
-	    grub_printf ("    ");
-
-	  if (opt->longarg)
-	    {
-	      grub_printf ("--%s", opt->longarg);
-	      spacing -= grub_strlen (opt->longarg) + 2;
-
-	      if (opt->arg)
-		{
-		  grub_printf ("=%s", opt->arg);
-		  spacing -= grub_strlen (opt->arg) + 1;
-		}
-	    }
-
-	  if (spacing < 0)
-	    spacing = 3;
-
-	  while (spacing--)
-	    grub_xputs (" ");
-
-	  grub_printf ("%s\n", _(opt->doc));
-
-	  switch (opt->shortarg)
-	    {
-	    case 'h':
-	      h_is_used = 1;
-	      break;
-
-	    case 'u':
-	      u_is_used = 1;
-	      break;
-
-	    default:
-	      break;
-	    }
-	}
-    }
+  const struct grub_arg_option *opt;
 
   show_usage (cmd);
   grub_printf ("%s\n\n", _(cmd->cmd->description));
+
+  for (opt = cmd->options; opt && opt->doc; opt++)
+    switch (opt->shortarg)
+      {
+      case 'h':
+	h_is_used = 1;
+	break;
+
+      case 'u':
+	u_is_used = 1;
+	break;
+      }
+
   if (cmd->options)
-    showargs (cmd->options);
-  showargs (help_options);
+    showargs (cmd->options, h_is_used, u_is_used);
+  showargs (help_options, h_is_used, u_is_used);
 #if 0
   grub_printf ("\nReport bugs to <%s>.\n", PACKAGE_BUGREPORT);
 #endif
@@ -180,53 +180,53 @@ grub_arg_show_help (grub_extcmd_t cmd)
 
 
 static int
-parse_option (grub_extcmd_t cmd, int key, char *arg, struct grub_arg_list *usr)
+parse_option (grub_extcmd_t cmd, const struct grub_arg_option *opt,
+	      char *arg, struct grub_arg_list *usr)
 {
-  switch (key)
+  if (opt == help_options)
     {
-    case SHORT_ARG_HELP:
       grub_arg_show_help (cmd);
       return -1;
+    }
 
-    case SHORT_ARG_USAGE:
+  if (opt == help_options + 1)
+    {
       show_usage (cmd);
       return -1;
-
-    default:
-      {
-	int found = -1;
-	int i = 0;
-	const struct grub_arg_option *opt = cmd->options;
-
-	while (opt->doc)
-	  {
-	    if (opt->shortarg && key == opt->shortarg)
-	      {
-		found = i;
-		break;
-	      }
-	    opt++;
-	    i++;
-	  }
-
-	if (found == -1)
-	  return -1;
-
-	if (opt->flags & GRUB_ARG_OPTION_REPEATABLE)
-	  {
-	    usr[found].args[usr[found].set++] = arg;
-	    usr[found].args[usr[found].set] = NULL;
-	  }
-	else
-	  {
-	    usr[found].set = 1;
-	    usr[found].arg = arg;
-	  }
-      }
     }
+  {
+    int found = opt - cmd->options;
+
+    if (opt->flags & GRUB_ARG_OPTION_REPEATABLE)
+      {
+	usr[found].args[usr[found].set++] = arg;
+	usr[found].args[usr[found].set] = NULL;
+      }
+    else
+      {
+	usr[found].set = 1;
+	usr[found].arg = arg;
+      }
+  }
 
   return 0;
 }
+
+static inline grub_err_t
+add_arg (char ***argl, int *num, char *s)
+{
+  char **p = *argl;
+  *argl = grub_realloc (*argl, (++(*num) + 1) * sizeof (char *));
+  if (! *argl)
+    {
+      grub_free (p);
+      return grub_errno;
+    }
+  (*argl)[(*num) - 1] = s;
+  (*argl)[(*num)] = NULL;
+  return 0;
+}
+
 
 int
 grub_arg_parse (grub_extcmd_t cmd, int argc, char **argv,
@@ -236,34 +236,18 @@ grub_arg_parse (grub_extcmd_t cmd, int argc, char **argv,
   int arglen;
   char **argl = 0;
   int num = 0;
-  auto grub_err_t add_arg (char *s);
-
-  grub_err_t add_arg (char *s)
-    {
-      char **p = argl;
-      argl = grub_realloc (argl, (++num + 1) * sizeof (char *));
-      if (! argl)
-	{
-	  grub_free (p);
-	  return grub_errno;
-	}
-      argl[num - 1] = s;
-      argl[num] = NULL;
-      return 0;
-    }
-
 
   for (curarg = 0; curarg < argc; curarg++)
     {
       char *arg = argv[curarg];
-      struct grub_arg_option *opt;
+      const struct grub_arg_option *opt;
       char *option = 0;
 
       /* No option is used.  */
       if ((num && (cmd->cmd->flags & GRUB_COMMAND_OPTIONS_AT_START))
 	  || arg[0] != '-' || grub_strlen (arg) == 1)
 	{
-	  if (add_arg (arg) != 0)
+	  if (add_arg (&argl, &num, arg) != 0)
 	    goto fail;
 
 	  continue;
@@ -282,7 +266,7 @@ grub_arg_parse (grub_extcmd_t cmd, int argc, char **argv,
 	    
 	      if (*curshort)
 		{
-		  if (add_arg (arg) != 0)
+		  if (add_arg (&argl, &num, arg) != 0)
 		    goto fail;
 		  continue;
 		}
@@ -296,8 +280,9 @@ grub_arg_parse (grub_extcmd_t cmd, int argc, char **argv,
 
 	      if (! opt)
 		{
+		  char tmp[3] = { '-', *curshort, 0 };
 		  grub_error (GRUB_ERR_BAD_ARGUMENT,
-			      "unknown argument `-%c'", *curshort);
+			      N_("unknown argument `%s'"), tmp);
 		  goto fail;
 		}
 
@@ -307,7 +292,7 @@ grub_arg_parse (grub_extcmd_t cmd, int argc, char **argv,
 		 it can have an argument value.  */
 	      if (*curshort)
 		{
-		  if (parse_option (cmd, opt->shortarg, 0, usr) || grub_errno)
+		  if (parse_option (cmd, opt, 0, usr) || grub_errno)
 		    goto fail;
 		}
 	      else
@@ -334,7 +319,7 @@ grub_arg_parse (grub_extcmd_t cmd, int argc, char **argv,
 	  if (grub_strlen (arg) == 2)
 	    {
 	      for (curarg++; curarg < argc; curarg++)
-		if (add_arg (argv[curarg]) != 0)
+		if (add_arg (&argl, &num, argv[curarg]) != 0)
 		  goto fail;
 	      break;
 	    }
@@ -351,19 +336,19 @@ grub_arg_parse (grub_extcmd_t cmd, int argc, char **argv,
 	  opt = find_long (cmd->options, arg + 2, arglen);
 
 	  if (!option && argv[curarg + 1] && argv[curarg + 1][0] != '-'
-	      && opt->type != ARG_TYPE_NONE)
+	      && opt && opt->type != ARG_TYPE_NONE)
 	    option = argv[++curarg];
 
 	  if (!opt && (cmd->cmd->flags & GRUB_COMMAND_ACCEPT_DASH))
 	    {
-	      if (add_arg (arg) != 0)
+	      if (add_arg (&argl, &num, arg) != 0)
 		goto fail;
 	      continue;
 	    }
 
 	  if (! opt)
 	    {
-	      grub_error (GRUB_ERR_BAD_ARGUMENT, "unknown argument `%s'", arg);
+	      grub_error (GRUB_ERR_BAD_ARGUMENT, N_("unknown argument `%s'"), arg);
 	      goto fail;
 	    }
 	}
@@ -374,7 +359,7 @@ grub_arg_parse (grub_extcmd_t cmd, int argc, char **argv,
 	  if (! option)
 	    {
 	      grub_error (GRUB_ERR_BAD_ARGUMENT,
-			  "missing mandatory option for `%s'", opt->longarg);
+			  N_("missing mandatory option for `%s'"), opt->longarg);
 	      goto fail;
 	    }
 
@@ -396,7 +381,7 @@ grub_arg_parse (grub_extcmd_t cmd, int argc, char **argv,
 		if (tail == 0 || tail == option || *tail != '\0' || grub_errno)
 		  {
 		    grub_error (GRUB_ERR_BAD_ARGUMENT,
-				"the argument `%s' requires an integer",
+				N_("the argument `%s' requires an integer"),
 				arg);
 
 		    goto fail;
@@ -411,7 +396,7 @@ grub_arg_parse (grub_extcmd_t cmd, int argc, char **argv,
 	      /* XXX: Not implemented.  */
 	      break;
 	    }
-	  if (parse_option (cmd, opt->shortarg, option, usr) || grub_errno)
+	  if (parse_option (cmd, opt, option, usr) || grub_errno)
 	    goto fail;
 	}
       else
@@ -419,12 +404,12 @@ grub_arg_parse (grub_extcmd_t cmd, int argc, char **argv,
 	  if (option)
 	    {
 	      grub_error (GRUB_ERR_BAD_ARGUMENT,
-			  "a value was assigned to the argument `%s' while it "
-			  "doesn't require an argument", arg);
+			  N_("a value was assigned to the argument `%s' while it "
+			     "doesn't require an argument"), arg);
 	      goto fail;
 	    }
 
-	  if (parse_option (cmd, opt->shortarg, 0, usr) || grub_errno)
+	  if (parse_option (cmd, opt, 0, usr) || grub_errno)
 	    goto fail;
 	}
     }
@@ -443,7 +428,7 @@ grub_arg_list_alloc(grub_extcmd_t extcmd, int argc,
 {
   int i;
   char **args;
-  unsigned argcnt;
+  grub_size_t argcnt;
   struct grub_arg_list *list;
   const struct grub_arg_option *options;
 
@@ -455,7 +440,7 @@ grub_arg_list_alloc(grub_extcmd_t extcmd, int argc,
   for (i = 0; options[i].doc; i++)
     {
       if (options[i].flags & GRUB_ARG_OPTION_REPEATABLE)
-	argcnt += (argc + 1) / 2 + 1; /* max possible for any option */
+	argcnt += ((grub_size_t) argc + 1) / 2 + 1; /* max possible for any option */
     }
 
   list = grub_zalloc (sizeof (*list) * i + sizeof (char*) * argcnt);
@@ -471,7 +456,7 @@ grub_arg_list_alloc(grub_extcmd_t extcmd, int argc,
       if (options[i].flags & GRUB_ARG_OPTION_REPEATABLE)
 	{
 	  list[i].args = args;
-	  args += argc / 2 + 1;
+	  args += (grub_size_t) argc / 2 + 1;
 	}
     }
   return list;

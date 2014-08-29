@@ -25,7 +25,6 @@ GRUB_MOD_LICENSE ("GPLv3+");
 
 
 #include "g10lib.h"
-#include "memory.h"
 #include "cipher.h"
 
 #include "bithelp.h"
@@ -279,6 +278,9 @@ gcry_md_spec_t _gcry_digest_spec_crc32 =
     crc32_init, crc32_write, crc32_final, crc32_read,
     sizeof (CRC_CONTEXT)
     ,
+#ifdef GRUB_UTIL
+    .modname = "gcry_crc",
+#endif
     .blocksize = 64
   };
 
@@ -289,6 +291,9 @@ gcry_md_spec_t _gcry_digest_spec_crc32_rfc1510 =
     crc32rfc1510_final, crc32_read,
     sizeof (CRC_CONTEXT)
     ,
+#ifdef GRUB_UTIL
+    .modname = "gcry_crc",
+#endif
     .blocksize = 64
   };
 
@@ -299,12 +304,18 @@ gcry_md_spec_t _gcry_digest_spec_crc24_rfc2440 =
     crc24rfc2440_final, crc32_read,
     sizeof (CRC_CONTEXT)
     ,
+#ifdef GRUB_UTIL
+    .modname = "gcry_crc",
+#endif
     .blocksize = 64
   };
 
 
 GRUB_MOD_INIT(gcry_crc)
 {
+  COMPILE_TIME_ASSERT(sizeof (CRC_CONTEXT) <= GRUB_CRYPTO_MAX_MD_CONTEXT_SIZE);
+  COMPILE_TIME_ASSERT(sizeof (CRC_CONTEXT) <= GRUB_CRYPTO_MAX_MD_CONTEXT_SIZE);
+  COMPILE_TIME_ASSERT(sizeof (CRC_CONTEXT) <= GRUB_CRYPTO_MAX_MD_CONTEXT_SIZE);
   grub_md_register (&_gcry_digest_spec_crc32);
   grub_md_register (&_gcry_digest_spec_crc32_rfc1510);
   grub_md_register (&_gcry_digest_spec_crc24_rfc2440);

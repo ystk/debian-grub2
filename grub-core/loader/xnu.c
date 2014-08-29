@@ -44,13 +44,14 @@ struct grub_xnu_devtree_key *grub_xnu_devtree_root = 0;
 static int driverspackagenum = 0;
 static int driversnum = 0;
 int grub_xnu_is_64bit = 0;
+int grub_xnu_darwin_version = 0;
 
 grub_addr_t grub_xnu_heap_target_start = 0;
 grub_size_t grub_xnu_heap_size = 0;
 struct grub_relocator *grub_xnu_relocator;
 
 static grub_err_t
-grub_xnu_register_memory (char *prefix, int *suffix,
+grub_xnu_register_memory (const char *prefix, int *suffix,
 			  grub_addr_t addr, grub_size_t size);
 grub_err_t
 grub_xnu_heap_malloc (int size, void **src, grub_addr_t *target)
@@ -103,7 +104,8 @@ grub_xnu_free_devtree (struct grub_xnu_devtree_key *cur)
 
 /* Compute the size of device tree in xnu format. */
 static grub_size_t
-grub_xnu_writetree_get_size (struct grub_xnu_devtree_key *start, char *name)
+grub_xnu_writetree_get_size (struct grub_xnu_devtree_key *start,
+			     const char *name)
 {
   grub_size_t ret;
   struct grub_xnu_devtree_key *cur;
@@ -134,7 +136,8 @@ grub_xnu_writetree_get_size (struct grub_xnu_devtree_key *start, char *name)
 /* Write devtree in XNU format at curptr assuming the head is named NAME.*/
 static void *
 grub_xnu_writetree_toheap_real (void *curptr,
-				struct grub_xnu_devtree_key *start, char *name)
+				struct grub_xnu_devtree_key *start,
+				const char *name)
 {
   struct grub_xnu_devtree_key *cur;
   int nkeys = 0, nvals = 0;
@@ -187,10 +190,13 @@ grub_xnu_writetree_toheap_real (void *curptr,
   /* And then the keys. Recursively use this function. */
   for (cur = start; cur; cur = cur->next)
     if (cur->datasize == -1)
-      if (!(curptr = grub_xnu_writetree_toheap_real (curptr,
-						     cur->first_child,
-						     cur->name)))
-	return 0;
+      {
+	curptr = grub_xnu_writetree_toheap_real (curptr,
+						 cur->first_child,
+						 cur->name);
+	if (!curptr)
+	  return 0;
+      }
   return curptr;
 }
 
@@ -219,17 +225,17 @@ grub_xnu_writetree_toheap (grub_addr_t *target, grub_size_t *size)
 
   driverkey = (struct grub_xnu_devtree_key *) grub_malloc (sizeof (*driverkey));
   if (! driverkey)
-    return grub_error (GRUB_ERR_OUT_OF_MEMORY, "can't write device tree");
+    return grub_errno;
   driverkey->name = grub_strdup ("DeviceTree");
   if (! driverkey->name)
-    return grub_error (GRUB_ERR_OUT_OF_MEMORY, "can't write device tree");
+    return grub_errno;
   driverkey->datasize = sizeof (*extdesc);
   driverkey->next = memorymap->first_child;
   memorymap->first_child = driverkey;
   driverkey->data = extdesc
     = (struct grub_xnu_extdesc *) grub_malloc (sizeof (*extdesc));
   if (! driverkey->data)
-    return grub_error (GRUB_ERR_OUT_OF_MEMORY, "can't write device tree");
+    return grub_errno;
 
   /* Allocate the space based on the size with dummy value. */
   *size = grub_xnu_writetree_get_size (grub_xnu_devtree_root, "/");
@@ -249,7 +255,7 @@ grub_xnu_writetree_toheap (grub_addr_t *target, grub_size_t *size)
 
 /* Find a key or value in parent key. */
 struct grub_xnu_devtree_key *
-grub_xnu_find_key (struct grub_xnu_devtree_key *parent, char *name)
+grub_xnu_find_key (struct grub_xnu_devtree_key *parent, const char *name)
 {
   struct grub_xnu_devtree_key *cur;
   for (cur = parent; cur; cur = cur->next)
@@ -259,7 +265,7 @@ grub_xnu_find_key (struct grub_xnu_devtree_key *parent, char *name)
 }
 
 struct grub_xnu_devtree_key *
-grub_xnu_create_key (struct grub_xnu_devtree_key **parent, char *name)
+grub_xnu_create_key (struct grub_xnu_devtree_key **parent, const char *name)
 {
   struct grub_xnu_devtree_key *ret;
   ret = grub_xnu_find_key (*parent, name);
@@ -267,15 +273,11 @@ grub_xnu_create_key (struct grub_xnu_devtree_key **parent, char *name)
     return ret;
   ret = (struct grub_xnu_devtree_key *) grub_zalloc (sizeof (*ret));
   if (! ret)
-    {
-      grub_error (GRUB_ERR_OUT_OF_MEMORY, "can't create key %s", name);
-      return 0;
-    }
+    return 0;
   ret->name = grub_strdup (name);
   if (! ret->name)
     {
       grub_free (ret);
-      grub_error (GRUB_ERR_OUT_OF_MEMORY, "can't create key %s", name);
       return 0;
     }
   ret->datasize = -1;
@@ -285,7 +287,7 @@ grub_xnu_create_key (struct grub_xnu_devtree_key **parent, char *name)
 }
 
 struct grub_xnu_devtree_key *
-grub_xnu_create_value (struct grub_xnu_devtree_key **parent, char *name)
+grub_xnu_create_value (struct grub_xnu_devtree_key **parent, const char *name)
 {
   struct grub_xnu_devtree_key *ret;
   ret = grub_xnu_find_key (*parent, name);
@@ -301,15 +303,11 @@ grub_xnu_create_value (struct grub_xnu_devtree_key **parent, char *name)
     }
   ret = (struct grub_xnu_devtree_key *) grub_zalloc (sizeof (*ret));
   if (! ret)
-    {
-      grub_error (GRUB_ERR_OUT_OF_MEMORY, "can't create value %s", name);
-      return 0;
-    }
+    return 0;
   ret->name = grub_strdup (name);
   if (! ret->name)
     {
       grub_free (ret);
-      grub_error (GRUB_ERR_OUT_OF_MEMORY, "can't create value %s", name);
       return 0;
     }
   ret->next = *parent;
@@ -349,21 +347,16 @@ grub_cmd_xnu_kernel (grub_command_t cmd __attribute__ ((unused)),
   grub_addr_t loadaddr_target;
 
   if (argc < 1)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "file name required");
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
 
   grub_xnu_unload ();
 
-  macho = grub_macho_open (args[0]);
+  macho = grub_macho_open (args[0], 0);
   if (! macho)
     return grub_errno;
-  if (! grub_macho_contains_macho32 (macho))
-    {
-      grub_macho_close (macho);
-      return grub_error (GRUB_ERR_BAD_OS,
-			 "kernel doesn't contain suitable 32-bit architecture");
-    }
 
-  err = grub_macho_size32 (macho, &startcode, &endcode, GRUB_MACHO_NOBSS);
+  err = grub_macho_size32 (macho, &startcode, &endcode, GRUB_MACHO_NOBSS,
+			   args[0]);
   if (err)
     {
       grub_macho_close (macho);
@@ -389,8 +382,8 @@ grub_cmd_xnu_kernel (grub_command_t cmd __attribute__ ((unused)),
     }
 
   /* Load kernel. */
-  err = grub_macho_load32 (macho, (char *) loadaddr - startcode,
-			   GRUB_MACHO_NOBSS);
+  err = grub_macho_load32 (macho, args[0], (char *) loadaddr - startcode,
+			   GRUB_MACHO_NOBSS, &grub_xnu_darwin_version);
   if (err)
     {
       grub_macho_close (macho);
@@ -398,7 +391,7 @@ grub_cmd_xnu_kernel (grub_command_t cmd __attribute__ ((unused)),
       return err;
     }
 
-  grub_xnu_entry_point = grub_macho_get_entry_point32 (macho);
+  grub_xnu_entry_point = grub_macho_get_entry_point32 (macho, args[0]);
   if (! grub_xnu_entry_point)
     {
       grub_macho_close (macho);
@@ -459,21 +452,16 @@ grub_cmd_xnu_kernel64 (grub_command_t cmd __attribute__ ((unused)),
   grub_addr_t loadaddr_target;
 
   if (argc < 1)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "file name required");
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
 
   grub_xnu_unload ();
 
-  macho = grub_macho_open (args[0]);
+  macho = grub_macho_open (args[0], 1);
   if (! macho)
     return grub_errno;
-  if (! grub_macho_contains_macho64 (macho))
-    {
-      grub_macho_close (macho);
-      return grub_error (GRUB_ERR_BAD_OS,
-			 "kernel doesn't contain suitable 64-bit architecture");
-    }
 
-  err = grub_macho_size64 (macho, &startcode, &endcode, GRUB_MACHO_NOBSS);
+  err = grub_macho_size64 (macho, &startcode, &endcode, GRUB_MACHO_NOBSS,
+			   args[0]);
   if (err)
     {
       grub_macho_close (macho);
@@ -502,8 +490,8 @@ grub_cmd_xnu_kernel64 (grub_command_t cmd __attribute__ ((unused)),
     }
 
   /* Load kernel. */
-  err = grub_macho_load64 (macho, (char *) loadaddr - startcode,
-			   GRUB_MACHO_NOBSS);
+  err = grub_macho_load64 (macho, args[0], (char *) loadaddr - startcode,
+			   GRUB_MACHO_NOBSS, &grub_xnu_darwin_version);
   if (err)
     {
       grub_macho_close (macho);
@@ -511,7 +499,8 @@ grub_cmd_xnu_kernel64 (grub_command_t cmd __attribute__ ((unused)),
       return err;
     }
 
-  grub_xnu_entry_point = grub_macho_get_entry_point64 (macho) & 0x0fffffff;
+  grub_xnu_entry_point = grub_macho_get_entry_point64 (macho, args[0])
+    & 0x0fffffff;
   if (! grub_xnu_entry_point)
     {
       grub_macho_close (macho);
@@ -562,7 +551,7 @@ grub_cmd_xnu_kernel64 (grub_command_t cmd __attribute__ ((unused)),
 /* Register a memory in a memory map under name PREFIXSUFFIX
    and increment SUFFIX. */
 static grub_err_t
-grub_xnu_register_memory (char *prefix, int *suffix,
+grub_xnu_register_memory (const char *prefix, int *suffix,
 			  grub_addr_t addr, grub_size_t size)
 {
   struct grub_xnu_devtree_key *chosen;
@@ -571,7 +560,7 @@ grub_xnu_register_memory (char *prefix, int *suffix,
   struct grub_xnu_extdesc *extdesc;
 
   if (! grub_xnu_heap_size)
-    return grub_error (GRUB_ERR_BAD_OS, "no xnu kernel loaded");
+    return grub_error (GRUB_ERR_BAD_OS, N_("you need to load the kernel first"));
 
   chosen = grub_xnu_create_key (&grub_xnu_devtree_root, "chosen");
   if (! chosen)
@@ -582,24 +571,27 @@ grub_xnu_register_memory (char *prefix, int *suffix,
 
   driverkey = (struct grub_xnu_devtree_key *) grub_malloc (sizeof (*driverkey));
   if (! driverkey)
-    return grub_error (GRUB_ERR_OUT_OF_MEMORY, "can't register memory");
+    return grub_errno;
   if (suffix)
-    {
-      driverkey->name = grub_xasprintf ("%s%d", prefix, (*suffix)++);
-      if (!driverkey->name)
-	return grub_error (GRUB_ERR_OUT_OF_MEMORY, "can't register memory");
-    }
+    driverkey->name = grub_xasprintf ("%s%d", prefix, (*suffix)++);
   else
     driverkey->name = grub_strdup (prefix);
-  if (! driverkey->name)
-    return grub_error (GRUB_ERR_OUT_OF_MEMORY, "can't register extension");
+  if (!driverkey->name)
+    {
+      grub_free (driverkey);
+      return grub_errno;
+    }
   driverkey->datasize = sizeof (*extdesc);
   driverkey->next = memorymap->first_child;
-  memorymap->first_child = driverkey;
   driverkey->data = extdesc
     = (struct grub_xnu_extdesc *) grub_malloc (sizeof (*extdesc));
   if (! driverkey->data)
-    return grub_error (GRUB_ERR_OUT_OF_MEMORY, "can't register extension");
+    {
+      grub_free (driverkey->name);
+      grub_free (driverkey);
+      return grub_errno;
+    }
+  memorymap->first_child = driverkey;
   extdesc->addr = addr;
   extdesc->size = (grub_uint32_t) size;
   return GRUB_ERR_NONE;
@@ -635,7 +627,8 @@ get_name_ptr (char *name)
 
 /* Load .kext. */
 static grub_err_t
-grub_xnu_load_driver (char *infoplistname, grub_file_t binaryfile)
+grub_xnu_load_driver (char *infoplistname, grub_file_t binaryfile,
+		      const char *filename)
 {
   grub_macho_t macho;
   grub_err_t err;
@@ -660,23 +653,21 @@ grub_xnu_load_driver (char *infoplistname, grub_file_t binaryfile)
   neededspace += namelen + 1;
 
   if (! grub_xnu_heap_size)
-    return grub_error (GRUB_ERR_BAD_OS, "no xnu kernel loaded");
+    return grub_error (GRUB_ERR_BAD_OS, N_("you need to load the kernel first"));
 
   /* Compute the needed space. */
   if (binaryfile)
     {
-      macho = grub_macho_file (binaryfile);
-      if (! macho || ! grub_macho_contains_macho32 (macho))
-	{
-	  if (macho)
-	    grub_macho_close (macho);
-	  return grub_error (GRUB_ERR_BAD_OS,
-			     "extension doesn't contain suitable architecture");
-	}
-      if (grub_xnu_is_64bit)
-	machosize = grub_macho_filesize64 (macho);
+      macho = grub_macho_file (binaryfile, filename, grub_xnu_is_64bit);
+      if (!macho)
+	grub_file_close (binaryfile);
       else
-	machosize = grub_macho_filesize32 (macho);
+	{
+	  if (grub_xnu_is_64bit)
+	    machosize = grub_macho_filesize64 (macho);
+	  else
+	    machosize = grub_macho_filesize32 (macho);
+	}
       neededspace += machosize;
     }
   else
@@ -714,9 +705,9 @@ grub_xnu_load_driver (char *infoplistname, grub_file_t binaryfile)
       exthead->binaryaddr = buf_target + (buf - (grub_uint8_t *) buf0);
       exthead->binarysize = machosize;
       if (grub_xnu_is_64bit)
-	err = grub_macho_readfile64 (macho, buf);
+	err = grub_macho_readfile64 (macho, filename, buf);
       else
-	err = grub_macho_readfile32 (macho, buf);
+	err = grub_macho_readfile32 (macho, filename, buf);
       if (err)
 	{
 	  grub_macho_close (macho);
@@ -736,9 +727,10 @@ grub_xnu_load_driver (char *infoplistname, grub_file_t binaryfile)
 	  != (grub_ssize_t) (infoplistsize))
 	{
 	  grub_file_close (infoplist);
-	  grub_error_push ();
-	  return grub_error (GRUB_ERR_BAD_OS, "couldn't read file %s: ",
-			     infoplistname);
+	  if (!grub_errno)
+	    grub_error (GRUB_ERR_BAD_OS, N_("premature end of file %s"),
+			infoplistname);
+	  return grub_errno;
 	}
       grub_file_close (infoplist);
       buf[infoplistsize] = 0;
@@ -773,15 +765,14 @@ grub_cmd_xnu_mkext (grub_command_t cmd __attribute__ ((unused)),
   int narchs, i;
 
   if (argc != 1)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "file name required");
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
 
   if (! grub_xnu_heap_size)
-    return grub_error (GRUB_ERR_BAD_OS, "no xnu kernel loaded");
+    return grub_error (GRUB_ERR_BAD_OS, N_("you need to load the kernel first"));
 
   file = grub_file_open (args[0]);
   if (! file)
-    return grub_error (GRUB_ERR_FILE_NOT_FOUND,
-		       "couldn't load driver package");
+    return grub_errno;
 
   /* Sometimes caches are fat binary. Errgh. */
   if (grub_file_read (file, &head, sizeof (head))
@@ -790,8 +781,9 @@ grub_cmd_xnu_mkext (grub_command_t cmd __attribute__ ((unused)),
       /* I don't know the internal structure of package but
 	 can hardly imagine a valid package shorter than 20 bytes. */
       grub_file_close (file);
-      grub_error_push ();
-      return grub_error (GRUB_ERR_BAD_OS, "couldn't read file %s", args[0]);
+      if (!grub_errno)
+	grub_error (GRUB_ERR_BAD_OS, N_("premature end of file %s"), args[0]);
+      return grub_errno;
     }
 
   /* Find the corresponding architecture. */
@@ -802,9 +794,7 @@ grub_cmd_xnu_mkext (grub_command_t cmd __attribute__ ((unused)),
       if (! archs)
 	{
 	  grub_file_close (file);
-	  grub_error_push ();
-	  return grub_error (GRUB_ERR_OUT_OF_MEMORY,
-			     "couldn't read file %s", args[0]);
+	  return grub_errno;
 
 	}
       if (grub_file_read (file, archs,
@@ -812,8 +802,10 @@ grub_cmd_xnu_mkext (grub_command_t cmd __attribute__ ((unused)),
 	  != (grub_ssize_t) sizeof(struct grub_macho_fat_arch) * narchs)
 	{
 	  grub_free (archs);
-	  grub_error_push ();
-	  return grub_error (GRUB_ERR_READ_ERROR, "cannot read fat header");
+	  if (!grub_errno)
+	    grub_error (GRUB_ERR_READ_ERROR, N_("premature end of file %s"),
+			args[0]);
+	  return grub_errno;
 	}
       for (i = 0; i < narchs; i++)
 	{
@@ -865,8 +857,9 @@ grub_cmd_xnu_mkext (grub_command_t cmd __attribute__ ((unused)),
   if (grub_file_read (file, loadto, readlen) != (grub_ssize_t) (readlen))
     {
       grub_file_close (file);
-      grub_error_push ();
-      return grub_error (GRUB_ERR_BAD_OS, "couldn't read file %s", args[0]);
+      if (!grub_errno)
+	grub_error (GRUB_ERR_BAD_OS, N_("premature end of file %s"), args[0]);
+      return grub_errno;
     }
   grub_file_close (file);
 
@@ -886,15 +879,14 @@ grub_cmd_xnu_ramdisk (grub_command_t cmd __attribute__ ((unused)),
   grub_size_t size;
 
   if (argc != 1)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "file name required");
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
 
   if (! grub_xnu_heap_size)
-    return grub_error (GRUB_ERR_BAD_OS, "no xnu kernel loaded");
+    return grub_error (GRUB_ERR_BAD_OS, N_("you need to load the kernel first"));
 
   file = grub_file_open (args[0]);
   if (! file)
-    return grub_error (GRUB_ERR_FILE_NOT_FOUND,
-		       "couldn't load ramdisk");
+    return grub_errno;
 
   err = grub_xnu_align_heap (GRUB_XNU_PAGESIZE);
   if (err)
@@ -905,12 +897,12 @@ grub_cmd_xnu_ramdisk (grub_command_t cmd __attribute__ ((unused)),
   err = grub_xnu_heap_malloc (size, &loadto, &loadto_target);
   if (err)
     return err;
-  if (grub_file_read (file, loadto, size)
-      != (grub_ssize_t) (size))
+  if (grub_file_read (file, loadto, size) != (grub_ssize_t) (size))
     {
       grub_file_close (file);
-      grub_error_push ();
-      return grub_error (GRUB_ERR_BAD_OS, "couldn't read file %s", args[0]);
+      if (!grub_errno)
+	grub_error (GRUB_ERR_BAD_OS, N_("premature end of file %s"), args[0]);
+      return grub_errno;
     }
   return grub_xnu_register_memory ("RAMDisk", 0, loadto_target, size);
 }
@@ -918,7 +910,8 @@ grub_cmd_xnu_ramdisk (grub_command_t cmd __attribute__ ((unused)),
 /* Returns true if the kext should be loaded according to plist
    and osbundlereq. Also fill BINNAME. */
 static int
-grub_xnu_check_os_bundle_required (char *plistname, char *osbundlereq,
+grub_xnu_check_os_bundle_required (char *plistname,
+				   const char *osbundlereq,
 				   char **binname)
 {
   grub_file_t file;
@@ -933,27 +926,20 @@ grub_xnu_check_os_bundle_required (char *plistname, char *osbundlereq,
 
   file = grub_file_open (plistname);
   if (! file)
-    {
-      grub_file_close (file);
-      grub_error_push ();
-      grub_error (GRUB_ERR_BAD_OS, "couldn't read file %s", plistname);
-      return 0;
-    }
+    return 0;
 
   size = grub_file_size (file);
   buf = grub_malloc (size);
   if (! buf)
     {
       grub_file_close (file);
-      grub_error_push ();
-      grub_error (GRUB_ERR_OUT_OF_MEMORY, "couldn't read file %s", plistname);
       return 0;
     }
   if (grub_file_read (file, buf, size) != (grub_ssize_t) (size))
     {
       grub_file_close (file);
-      grub_error_push ();
-      grub_error (GRUB_ERR_BAD_OS, "couldn't read file %s", plistname);
+      if (!grub_errno)
+	grub_error (GRUB_ERR_BAD_OS, N_("premature end of file %s"), plistname);
       return 0;
     }
   grub_file_close (file);
@@ -1031,51 +1017,68 @@ grub_xnu_check_os_bundle_required (char *plistname, char *osbundlereq,
   return ret;
 }
 
+/* Context for grub_xnu_scan_dir_for_kexts.  */
+struct grub_xnu_scan_dir_for_kexts_ctx
+{
+  char *dirname;
+  const char *osbundlerequired;
+  int maxrecursion;
+};
+
+/* Helper for grub_xnu_scan_dir_for_kexts.  */
+static int
+grub_xnu_scan_dir_for_kexts_load (const char *filename,
+				  const struct grub_dirhook_info *info,
+				  void *data)
+{
+  struct grub_xnu_scan_dir_for_kexts_ctx *ctx = data;
+  char *newdirname;
+
+  if (! info->dir)
+    return 0;
+  if (filename[0] == '.')
+    return 0;
+
+  if (grub_strlen (filename) < 5 ||
+      grub_memcmp (filename + grub_strlen (filename) - 5, ".kext", 5) != 0)
+    return 0;
+
+  newdirname
+    = grub_malloc (grub_strlen (ctx->dirname) + grub_strlen (filename) + 2);
+
+  /* It's a .kext. Try to load it. */
+  if (newdirname)
+    {
+      grub_strcpy (newdirname, ctx->dirname);
+      newdirname[grub_strlen (newdirname) + 1] = 0;
+      newdirname[grub_strlen (newdirname)] = '/';
+      grub_strcpy (newdirname + grub_strlen (newdirname), filename);
+      grub_xnu_load_kext_from_dir (newdirname, ctx->osbundlerequired,
+				   ctx->maxrecursion);
+      if (grub_errno == GRUB_ERR_BAD_OS)
+	grub_errno = GRUB_ERR_NONE;
+      grub_free (newdirname);
+    }
+  return 0;
+}
+
 /* Load all loadable kexts placed under DIRNAME and matching OSBUNDLEREQUIRED */
 grub_err_t
-grub_xnu_scan_dir_for_kexts (char *dirname, char *osbundlerequired,
+grub_xnu_scan_dir_for_kexts (char *dirname, const char *osbundlerequired,
 			     int maxrecursion)
 {
+  struct grub_xnu_scan_dir_for_kexts_ctx ctx = {
+    .dirname = dirname,
+    .osbundlerequired = osbundlerequired,
+    .maxrecursion = maxrecursion
+  };
   grub_device_t dev;
   char *device_name;
   grub_fs_t fs;
   const char *path;
 
-  auto int load_hook (const char *filename,
-		      const struct grub_dirhook_info *info);
-  int load_hook (const char *filename, const struct grub_dirhook_info *info)
-  {
-    char *newdirname;
-    if (! info->dir)
-      return 0;
-    if (filename[0] == '.')
-      return 0;
-
-    if (grub_strlen (filename) < 5 ||
-	grub_memcmp (filename + grub_strlen (filename) - 5, ".kext", 5) != 0)
-      return 0;
-
-    newdirname
-      = grub_malloc (grub_strlen (dirname) + grub_strlen (filename) + 2);
-
-    /* It's a .kext. Try to load it. */
-    if (newdirname)
-      {
-	grub_strcpy (newdirname, dirname);
-	newdirname[grub_strlen (newdirname) + 1] = 0;
-	newdirname[grub_strlen (newdirname)] = '/';
-	grub_strcpy (newdirname + grub_strlen (newdirname), filename);
-	grub_xnu_load_kext_from_dir (newdirname, osbundlerequired,
-				     maxrecursion);
-	if (grub_errno == GRUB_ERR_BAD_OS)
-	  grub_errno = GRUB_ERR_NONE;
-	grub_free (newdirname);
-      }
-    return 0;
-  }
-
   if (! grub_xnu_heap_size)
-    return grub_error (GRUB_ERR_BAD_OS, "no xnu kernel loaded");
+    return grub_error (GRUB_ERR_BAD_OS, N_("you need to load the kernel first"));
 
   device_name = grub_file_get_device_name (dirname);
   dev = grub_device_open (device_name);
@@ -1089,7 +1092,7 @@ grub_xnu_scan_dir_for_kexts (char *dirname, char *osbundlerequired,
 	path++;
 
       if (fs)
-	(fs->dir) (dev, path, load_hook);
+	(fs->dir) (dev, path, grub_xnu_scan_dir_for_kexts_load, &ctx);
       grub_device_close (dev);
     }
   grub_free (device_name);
@@ -1097,60 +1100,78 @@ grub_xnu_scan_dir_for_kexts (char *dirname, char *osbundlerequired,
   return GRUB_ERR_NONE;
 }
 
+/* Context for grub_xnu_load_kext_from_dir.  */
+struct grub_xnu_load_kext_from_dir_ctx
+{
+  char *dirname;
+  const char *osbundlerequired;
+  int maxrecursion;
+  char *plistname;
+  char *newdirname;
+  int usemacos;
+};
+
+/* Helper for grub_xnu_load_kext_from_dir.  */
+static int
+grub_xnu_load_kext_from_dir_load (const char *filename,
+				  const struct grub_dirhook_info *info,
+				  void *data)
+{
+  struct grub_xnu_load_kext_from_dir_ctx *ctx = data;
+
+  if (grub_strlen (filename) > 15)
+    return 0;
+  grub_strcpy (ctx->newdirname + grub_strlen (ctx->dirname) + 1, filename);
+
+  /* If the kext contains directory "Contents" all real stuff is in
+     this directory. */
+  if (info->dir && grub_strcasecmp (filename, "Contents") == 0)
+    grub_xnu_load_kext_from_dir (ctx->newdirname, ctx->osbundlerequired,
+				 ctx->maxrecursion - 1);
+
+  /* Directory "Plugins" contains nested kexts. */
+  if (info->dir && grub_strcasecmp (filename, "Plugins") == 0)
+    grub_xnu_scan_dir_for_kexts (ctx->newdirname, ctx->osbundlerequired,
+				 ctx->maxrecursion - 1);
+
+  /* Directory "MacOS" contains executable, otherwise executable is
+     on the top. */
+  if (info->dir && grub_strcasecmp (filename, "MacOS") == 0)
+    ctx->usemacos = 1;
+
+  /* Info.plist is the file which governs our future actions. */
+  if (! info->dir && grub_strcasecmp (filename, "Info.plist") == 0
+      && ! ctx->plistname)
+    ctx->plistname = grub_strdup (ctx->newdirname);
+  return 0;
+}
+
 /* Load extension DIRNAME. (extensions are directories in xnu) */
 grub_err_t
-grub_xnu_load_kext_from_dir (char *dirname, char *osbundlerequired,
+grub_xnu_load_kext_from_dir (char *dirname, const char *osbundlerequired,
 			     int maxrecursion)
 {
+  struct grub_xnu_load_kext_from_dir_ctx ctx = {
+    .dirname = dirname,
+    .osbundlerequired = osbundlerequired,
+    .maxrecursion = maxrecursion,
+    .plistname = 0,
+    .usemacos = 0
+  };
   grub_device_t dev;
-  char *plistname = 0;
-  char *newdirname;
   char *newpath;
   char *device_name;
   grub_fs_t fs;
   const char *path;
   char *binsuffix;
-  int usemacos = 0;
   grub_file_t binfile;
 
-  auto int load_hook (const char *filename,
-		      const struct grub_dirhook_info *info);
-
-  int load_hook (const char *filename, const struct grub_dirhook_info *info)
-  {
-    if (grub_strlen (filename) > 15)
-      return 0;
-    grub_strcpy (newdirname + grub_strlen (dirname) + 1, filename);
-
-    /* If the kext contains directory "Contents" all real stuff is in
-       this directory. */
-    if (info->dir && grub_strcasecmp (filename, "Contents") == 0)
-      grub_xnu_load_kext_from_dir (newdirname, osbundlerequired,
-				   maxrecursion - 1);
-
-    /* Directory "Plugins" contains nested kexts. */
-    if (info->dir && grub_strcasecmp (filename, "Plugins") == 0)
-      grub_xnu_scan_dir_for_kexts (newdirname, osbundlerequired,
-				   maxrecursion - 1);
-
-    /* Directory "MacOS" contains executable, otherwise executable is
-       on the top. */
-    if (info->dir && grub_strcasecmp (filename, "MacOS") == 0)
-      usemacos = 1;
-
-    /* Info.plist is the file which governs our future actions. */
-    if (! info->dir && grub_strcasecmp (filename, "Info.plist") == 0
-	&& ! plistname)
-      plistname = grub_strdup (newdirname);
-    return 0;
-  }
-
-  newdirname = grub_malloc (grub_strlen (dirname) + 20);
-  if (! newdirname)
-    return grub_error (GRUB_ERR_OUT_OF_MEMORY, "couldn't allocate buffer");
-  grub_strcpy (newdirname, dirname);
-  newdirname[grub_strlen (dirname)] = '/';
-  newdirname[grub_strlen (dirname) + 1] = 0;
+  ctx.newdirname = grub_malloc (grub_strlen (dirname) + 20);
+  if (! ctx.newdirname)
+    return grub_errno;
+  grub_strcpy (ctx.newdirname, dirname);
+  ctx.newdirname[grub_strlen (dirname)] = '/';
+  ctx.newdirname[grub_strlen (dirname) + 1] = 0;
   device_name = grub_file_get_device_name (dirname);
   dev = grub_device_open (device_name);
   if (dev)
@@ -1162,18 +1183,18 @@ grub_xnu_load_kext_from_dir (char *dirname, char *osbundlerequired,
       else
 	path++;
 
-      newpath = grub_strchr (newdirname, ')');
+      newpath = grub_strchr (ctx.newdirname, ')');
       if (! newpath)
-	newpath = newdirname;
+	newpath = ctx.newdirname;
       else
 	newpath++;
 
       /* Look at the directory. */
       if (fs)
-	(fs->dir) (dev, path, load_hook);
+	(fs->dir) (dev, path, grub_xnu_load_kext_from_dir_load, &ctx);
 
-      if (plistname && grub_xnu_check_os_bundle_required
-	  (plistname, osbundlerequired, &binsuffix))
+      if (ctx.plistname && grub_xnu_check_os_bundle_required
+	  (ctx.plistname, osbundlerequired, &binsuffix))
 	{
 	  if (binsuffix)
 	    {
@@ -1182,28 +1203,29 @@ grub_xnu_load_kext_from_dir (char *dirname, char *osbundlerequired,
 					   + grub_strlen (binsuffix)
 					   + sizeof ("/MacOS/"));
 	      grub_strcpy (binname, dirname);
-	      if (usemacos)
+	      if (ctx.usemacos)
 		grub_strcpy (binname + grub_strlen (binname), "/MacOS/");
 	      else
 		grub_strcpy (binname + grub_strlen (binname), "/");
 	      grub_strcpy (binname + grub_strlen (binname), binsuffix);
-	      grub_dprintf ("xnu", "%s:%s\n", plistname, binname);
+	      grub_dprintf ("xnu", "%s:%s\n", ctx.plistname, binname);
 	      binfile = grub_file_open (binname);
 	      if (! binfile)
 		grub_errno = GRUB_ERR_NONE;
 
 	      /* Load the extension. */
-	      grub_xnu_load_driver (plistname, binfile);
+	      grub_xnu_load_driver (ctx.plistname, binfile,
+				    binname);
 	      grub_free (binname);
 	      grub_free (binsuffix);
 	    }
 	  else
 	    {
-	      grub_dprintf ("xnu", "%s:0\n", plistname);
-	      grub_xnu_load_driver (plistname, 0);
+	      grub_dprintf ("xnu", "%s:0\n", ctx.plistname);
+	      grub_xnu_load_driver (ctx.plistname, 0, 0);
 	    }
 	}
-      grub_free (plistname);
+      grub_free (ctx.plistname);
       grub_device_close (dev);
     }
   grub_free (device_name);
@@ -1223,7 +1245,7 @@ grub_cmd_xnu_kext (grub_command_t cmd __attribute__ ((unused)),
   grub_file_t binfile = 0;
 
   if (! grub_xnu_heap_size)
-    return grub_error (GRUB_ERR_BAD_OS, "no xnu kernel loaded");
+    return grub_error (GRUB_ERR_BAD_OS, N_("you need to load the kernel first"));
 
   if (argc == 2)
     {
@@ -1232,20 +1254,17 @@ grub_cmd_xnu_kext (grub_command_t cmd __attribute__ ((unused)),
 	{
 	  binfile = grub_file_open (args[1]);
 	  if (! binfile)
-	    {
-	      grub_error (GRUB_ERR_BAD_OS, "can't open file");
-	      return GRUB_ERR_NONE;
-	    }
+	    return grub_errno;
 	}
       return grub_xnu_load_driver (grub_strcmp (args[0], "-") ? args[0] : 0,
-				   binfile);
+				   binfile, args[1]);
     }
 
   /* load kext normally. */
   if (argc == 1)
     return grub_xnu_load_kext_from_dir (args[0], 0, 10);
 
-  return grub_error (GRUB_ERR_BAD_ARGUMENT, "file name required");
+  return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
 }
 
 /* Load a directory containing kexts. */
@@ -1257,7 +1276,7 @@ grub_cmd_xnu_kextdir (grub_command_t cmd __attribute__ ((unused)),
     return grub_error (GRUB_ERR_BAD_ARGUMENT, "directory name required");
 
   if (! grub_xnu_heap_size)
-    return grub_error (GRUB_ERR_BAD_OS, "no xnu kernel loaded");
+    return grub_error (GRUB_ERR_BAD_OS, N_("you need to load the kernel first"));
 
   if (argc == 1)
     return grub_xnu_scan_dir_for_kexts (args[0],
@@ -1268,8 +1287,7 @@ grub_cmd_xnu_kextdir (grub_command_t cmd __attribute__ ((unused)),
       char *osbundlerequired = grub_strdup (args[1]), *ptr;
       grub_err_t err;
       if (! osbundlerequired)
-	return grub_error (GRUB_ERR_OUT_OF_MEMORY,
-			   "couldn't allocate string temporary space");
+	return grub_errno;
       for (ptr = osbundlerequired; *ptr; ptr++)
 	*ptr = grub_tolower (*ptr);
       err = grub_xnu_scan_dir_for_kexts (args[0], osbundlerequired, 10);
@@ -1314,8 +1332,8 @@ unescape (char *name, char *curdot, char *nextdot, int *len)
 grub_err_t
 grub_xnu_fill_devicetree (void)
 {
-  auto int iterate_env (struct grub_env_var *var);
-  int iterate_env (struct grub_env_var *var)
+  struct grub_env_var *var;
+  FOR_SORTED_ENV (var)
   {
     char *nextdot = 0, *curdot;
     struct grub_xnu_devtree_key **curkey = &grub_xnu_devtree_root;
@@ -1325,7 +1343,7 @@ grub_xnu_fill_devicetree (void)
 
     if (grub_memcmp (var->name, "XNU.DeviceTree.",
 		     sizeof ("XNU.DeviceTree.") - 1) != 0)
-      return 0;
+      continue;
 
     curdot = var->name + sizeof ("XNU.DeviceTree.") - 1;
     nextdot = grub_strchr (curdot, '.');
@@ -1336,7 +1354,7 @@ grub_xnu_fill_devicetree (void)
 	name = grub_realloc (name, nextdot - curdot + 1);
 
 	if (!name)
-	  return 1;
+	  return grub_errno;
 
 	unescape (name, curdot, nextdot, &len);
 	name[len - 1] = 0;
@@ -1354,7 +1372,7 @@ grub_xnu_fill_devicetree (void)
     name = grub_realloc (name, nextdot - curdot + 1);
    
     if (!name)
-      return 1;
+      return grub_errno;
    
     unescape (name, curdot, nextdot, &len);
     name[len] = 0;
@@ -1364,17 +1382,13 @@ grub_xnu_fill_devicetree (void)
    
     data = grub_malloc (grub_strlen (var->value) + 1);
     if (!data)
-      return 1;
+      return grub_errno;
    
     unescape (data, var->value, var->value + grub_strlen (var->value),
 	      &len);
     curvalue->datasize = len;
     curvalue->data = data;
-
-    return 0;
   }
-
-  grub_env_iterate (iterate_env);
 
   return grub_errno;
 }
@@ -1387,7 +1401,7 @@ grub_xnu_bitmap_mode_t grub_xnu_bitmap_mode;
 
 static const struct grub_arg_option xnu_splash_cmd_options[] =
   {
-    {"mode", 'm', 0, "Background image mode.", "stretch|normal",
+    {"mode", 'm', 0, N_("Background image mode."), N_("stretch|normal"),
      ARG_TYPE_STRING},
     {0, 0, 0, 0, 0, 0}
   };
@@ -1398,10 +1412,10 @@ grub_cmd_xnu_splash (grub_extcmd_context_t ctxt,
 {
   grub_err_t err;
   if (argc != 1)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "file name required");
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
 
   if (! grub_xnu_heap_size)
-    return grub_error (GRUB_ERR_BAD_OS, "no xnu kernel loaded");
+    return grub_error (GRUB_ERR_BAD_OS, N_("you need to load the kernel first"));
 
   if (ctxt->state[XNU_SPLASH_CMD_ARGINDEX_MODE].set &&
       grub_strcmp (ctxt->state[XNU_SPLASH_CMD_ARGINDEX_MODE].arg,
@@ -1424,7 +1438,7 @@ grub_cmd_xnu_resume (grub_command_t cmd __attribute__ ((unused)),
 		     int argc, char *args[])
 {
   if (argc != 1)
-    return grub_error (GRUB_ERR_BAD_ARGUMENT, "file name required");
+    return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
 
   return grub_xnu_resume (args[0]);
 }
@@ -1461,11 +1475,19 @@ GRUB_MOD_INIT(xnu)
   cmd_kext = grub_register_command ("xnu_kext", grub_cmd_xnu_kext, 0,
 				    N_("Load XNU extension."));
   cmd_kextdir = grub_register_command ("xnu_kextdir", grub_cmd_xnu_kextdir,
+				       /* TRANSLATORS: OSBundleRequired is a
+					  variable name in xnu extensions
+					  manifests. It behaves mostly like
+					  GNU/Linux runlevels.
+				       */
 				       N_("DIRECTORY [OSBundleRequired]"),
+				       /* TRANSLATORS: There are many extensions
+					  in extension directory.  */
 				       N_("Load XNU extension directory."));
   cmd_ramdisk = grub_register_command ("xnu_ramdisk", grub_cmd_xnu_ramdisk, 0,
-				       "Load XNU ramdisk. "
-				       "It will be seen as md0.");
+   /* TRANSLATORS: ramdisk here isn't identifier. It can be translated.  */
+				       N_("Load XNU ramdisk. "
+					  "It will be available in OS as md0."));
   cmd_splash = grub_register_extcmd ("xnu_splash",
 				     grub_cmd_xnu_splash, 0, 0,
 				     N_("Load a splash image for XNU."),
@@ -1473,7 +1495,8 @@ GRUB_MOD_INIT(xnu)
 
 #ifndef GRUB_MACHINE_EMU
   cmd_resume = grub_register_command ("xnu_resume", grub_cmd_xnu_resume,
-				      0, N_("Load XNU hibernate image."));
+				      0, N_("Load an image of hibernated"
+					    " XNU."));
 #endif
 
   grub_cpu_xnu_init ();

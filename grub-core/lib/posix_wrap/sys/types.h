@@ -21,11 +21,13 @@
 
 #include <grub/misc.h>
 
-typedef grub_size_t size_t;
-typedef enum { false = 0, true = 1 } bool;
+#include <stddef.h>
 
-#define ULONG_MAX GRUB_ULONG_MAX
-#define UCHAR_MAX 0xff
+typedef grub_ssize_t ssize_t;
+#ifndef GRUB_POSIX_BOOL_DEFINED
+typedef enum { false = 0, true = 1 } bool;
+#define GRUB_POSIX_BOOL_DEFINED 1
+#endif
 
 typedef grub_uint8_t uint8_t;
 typedef grub_uint16_t uint16_t;
@@ -37,8 +39,25 @@ typedef grub_int16_t int16_t;
 typedef grub_int32_t int32_t;
 typedef grub_int64_t int64_t;
 
+#define HAVE_U64_TYPEDEF 1
+typedef grub_uint64_t u64;
+#define HAVE_U32_TYPEDEF 1
+typedef grub_uint32_t u32;
+#define HAVE_U16_TYPEDEF 1
+typedef grub_uint16_t u16;
+#define HAVE_BYTE_TYPEDEF 1
+typedef grub_uint8_t byte;
+
+typedef grub_addr_t uintptr_t;
+
+#define SIZEOF_UNSIGNED_LONG GRUB_CPU_SIZEOF_LONG
+#define SIZEOF_UNSIGNED_INT 4
+#define SIZEOF_UNSIGNED_LONG_LONG 8
+#define SIZEOF_UNSIGNED_SHORT 2
+#define SIZEOF_UINT64_T 8
+
 #ifdef GRUB_CPU_WORDS_BIGENDIAN
-#define WORDS_BIGENDIAN
+#define WORDS_BIGENDIAN 1
 #else
 #undef WORDS_BIGENDIAN
 #endif

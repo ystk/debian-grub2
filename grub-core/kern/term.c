@@ -28,7 +28,12 @@ struct grub_term_input *grub_term_inputs_disabled;
 struct grub_term_output *grub_term_outputs;
 struct grub_term_input *grub_term_inputs;
 
-void (*grub_term_poll_usb) (void) = NULL;
+/* Current color state.  */
+grub_uint8_t grub_term_normal_color = GRUB_TERM_DEFAULT_NORMAL_COLOR;
+grub_uint8_t grub_term_highlight_color = GRUB_TERM_DEFAULT_HIGHLIGHT_COLOR;
+
+void (*grub_term_poll_usb) (int wait_for_completion) = NULL;
+void (*grub_net_poll_cards_idle) (void) = NULL;
 
 /* Put a Unicode character.  */
 static void
@@ -41,7 +46,6 @@ grub_putcode_dumb (grub_uint32_t code,
       .variant = 0,
       .attributes = 0,
       .ncomb = 0,
-      .combining = 0,
       .estimated_width = 1
     };
 
@@ -49,7 +53,8 @@ grub_putcode_dumb (grub_uint32_t code,
     {
       int n;
 
-      n = 8 - ((term->getxy (term) >> 8) & 7);
+      n = GRUB_TERM_TAB_WIDTH - ((term->getxy (term).x)
+				 % GRUB_TERM_TAB_WIDTH);
       while (n--)
 	grub_putcode_dumb (' ', term);
 
@@ -78,27 +83,25 @@ grub_xputs_dumb (const char *str)
 
 void (*grub_xputs) (const char *str) = grub_xputs_dumb;
 
-static int pending_key = GRUB_TERM_NO_KEY;
-
 int
-grub_checkkey (void)
+grub_getkey_noblock (void)
 {
   grub_term_input_t term;
 
-  if (pending_key != GRUB_TERM_NO_KEY)
-    return pending_key;
-
   if (grub_term_poll_usb)
-    grub_term_poll_usb ();
+    grub_term_poll_usb (0);
+
+  if (grub_net_poll_cards_idle)
+    grub_net_poll_cards_idle ();
 
   FOR_ACTIVE_TERM_INPUTS(term)
   {
-    pending_key = term->getkey (term);
-    if (pending_key != GRUB_TERM_NO_KEY)
-      return pending_key;
+    int key = term->getkey (term);
+    if (key != GRUB_TERM_NO_KEY)
+      return key;
   }
 
-  return -1;
+  return GRUB_TERM_NO_KEY;
 }
 
 int
@@ -108,17 +111,14 @@ grub_getkey (void)
 
   grub_refresh ();
 
-  grub_checkkey ();
-  while (pending_key == GRUB_TERM_NO_KEY)
+  while (1)
     {
+      ret = grub_getkey_noblock ();
+      if (ret != GRUB_TERM_NO_KEY)
+	return ret;
       grub_cpu_idle ();
-      grub_checkkey ();
     }
-  ret = pending_key;
-  pending_key = GRUB_TERM_NO_KEY;
-  return ret;
 }
-
 
 void
 grub_refresh (void)

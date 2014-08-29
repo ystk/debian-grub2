@@ -39,10 +39,13 @@ extern char _end[];
 static grub_uint64_t mem_size, above_4g;
 
 void
-grub_machine_mmap_init ()
+grub_machine_mmap_init (void)
 {
-  mem_size = ((grub_uint64_t) grub_cmos_read (QEMU_CMOS_MEMSIZE_HIGH)) << 24
-    | ((grub_uint64_t) grub_cmos_read (QEMU_CMOS_MEMSIZE_LOW)) << 16;
+  grub_uint8_t high, low, b, c, d;
+  grub_cmos_read (QEMU_CMOS_MEMSIZE_HIGH, &high);
+  grub_cmos_read (QEMU_CMOS_MEMSIZE_LOW, &low);
+  mem_size = ((grub_uint64_t) high) << 24
+    | ((grub_uint64_t) low) << 16;
   if (mem_size > 0)
     {
       /* Don't ask... */
@@ -50,50 +53,54 @@ grub_machine_mmap_init ()
     }
   else
     {
+      grub_cmos_read (QEMU_CMOS_MEMSIZE2_HIGH, &high);
+      grub_cmos_read (QEMU_CMOS_MEMSIZE2_LOW, &low);
       mem_size
-	= ((((grub_uint64_t) grub_cmos_read (QEMU_CMOS_MEMSIZE2_HIGH)) << 18)
-	   | ((grub_uint64_t) (grub_cmos_read (QEMU_CMOS_MEMSIZE2_LOW)) << 10))
+	= ((((grub_uint64_t) high) << 18) | (((grub_uint64_t) low) << 10))
 	+ 1024 * 1024;
     }
 
-  above_4g = (((grub_uint64_t) grub_cmos_read (0x5b)) << 16)
-    | (((grub_uint64_t) grub_cmos_read (0x5c)) << 24)
-    | (((grub_uint64_t) grub_cmos_read (0x5d)) << 32);
+  grub_cmos_read (0x5b, &b);
+  grub_cmos_read (0x5c, &c);
+  grub_cmos_read (0x5d, &d);
+  above_4g = (((grub_uint64_t) b) << 16)
+    | (((grub_uint64_t) c) << 24)
+    | (((grub_uint64_t) d) << 32);
 }
 
 grub_err_t
-grub_machine_mmap_iterate (grub_memory_hook_t hook)
+grub_machine_mmap_iterate (grub_memory_hook_t hook, void *hook_data)
 {
   if (hook (0x0,
 	    (grub_addr_t) _start,
-	    GRUB_MEMORY_AVAILABLE))
+	    GRUB_MEMORY_AVAILABLE, hook_data))
     return 1;
 
   if (hook ((grub_addr_t) _end,
            0xa0000 - (grub_addr_t) _end,
-           GRUB_MEMORY_AVAILABLE))
+           GRUB_MEMORY_AVAILABLE, hook_data))
     return 1;
 
   if (hook (GRUB_MEMORY_MACHINE_UPPER,
 	    0x100000 - GRUB_MEMORY_MACHINE_UPPER,
-	    GRUB_MEMORY_RESERVED))
+	    GRUB_MEMORY_RESERVED, hook_data))
     return 1;
 
   /* Everything else is free.  */
   if (hook (0x100000,
 	    min (mem_size, (grub_uint32_t) -GRUB_BOOT_MACHINE_SIZE) - 0x100000,
-	    GRUB_MEMORY_AVAILABLE))
+	    GRUB_MEMORY_AVAILABLE, hook_data))
     return 1;
 
   /* Protect boot.img, which contains the gdt.  It is mapped at the top of memory
      (it is also mapped below 0x100000, but we already reserved that area).  */
   if (hook ((grub_uint32_t) -GRUB_BOOT_MACHINE_SIZE,
 	    GRUB_BOOT_MACHINE_SIZE,
-	    GRUB_MEMORY_RESERVED))
+	    GRUB_MEMORY_RESERVED, hook_data))
     return 1;
 
   if (above_4g != 0 && hook (0x100000000ULL, above_4g,
-			     GRUB_MEMORY_AVAILABLE))
+			     GRUB_MEMORY_AVAILABLE, hook_data))
     return 1;
 
   return 0;

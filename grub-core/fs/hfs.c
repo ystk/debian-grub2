@@ -28,6 +28,7 @@
 #include <grub/dl.h>
 #include <grub/types.h>
 #include <grub/hfs.h>
+#include <grub/i18n.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -64,7 +65,7 @@ struct grub_hfs_node
   grub_uint8_t level;
   grub_uint16_t reccnt;
   grub_uint16_t unused;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 /* The head of the B*-Tree.  */
 struct grub_hfs_treeheader
@@ -80,7 +81,7 @@ struct grub_hfs_treeheader
   grub_uint32_t nodes;
   grub_uint32_t free_nodes;
   grub_uint8_t unused[76];
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 /* The state of a mounted HFS filesystem.  */
 struct grub_hfs_data
@@ -111,7 +112,7 @@ struct grub_hfs_catalog_key
 
   /* Filename.  */
   grub_uint8_t str[31];
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 /* The key as used on disk in a extent overflow tree.  Using this key
    the extents can be looked up using a fileid and logical start block
@@ -124,7 +125,7 @@ struct grub_hfs_extent_key
   grub_uint8_t forktype;
   grub_uint32_t fileid;
   grub_uint16_t first_block;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 /* A directory record.  This is used to find out the directory ID.  */
 struct grub_hfs_dirrec
@@ -133,7 +134,9 @@ struct grub_hfs_dirrec
   grub_uint8_t type;
   grub_uint8_t unused[5];
   grub_uint32_t dirid;
-} __attribute__ ((packed));
+  grub_uint32_t ctime;
+  grub_uint32_t mtime;
+} GRUB_PACKED;
 
 /* Information about a file.  */
 struct grub_hfs_filerec
@@ -144,27 +147,29 @@ struct grub_hfs_filerec
   grub_uint32_t fileid;
   grub_uint8_t unused2[2];
   grub_uint32_t size;
-  grub_uint8_t unused3[44];
+  grub_uint8_t unused3[18];
+  grub_uint32_t mtime;
+  grub_uint8_t unused4[22];
 
   /* The first 3 extents of the file.  The other extents can be found
      in the extent overflow file.  */
   grub_hfs_datarecord_t extents;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 /* A record descriptor, both key and data, used to pass to call back
    functions.  */
 struct grub_hfs_record
 {
   void *key;
-  int keylen;
+  grub_size_t keylen;
   void *data;
-  int datalen;
+  grub_size_t datalen;
 };
 
 static grub_dl_t my_mod;
 
 static int grub_hfs_find_node (struct grub_hfs_data *, char *,
-			       grub_uint32_t, int, char *, int);
+			       grub_uint32_t, int, char *, grub_size_t);
 
 /* Find block BLOCK of the file FILE in the mounted UFS filesystem
    DATA.  The first 3 extents are described by DAT.  If cache is set,
@@ -238,23 +243,25 @@ grub_hfs_block (struct grub_hfs_data *data, grub_hfs_datarecord_t dat,
    POS.  Return the amount of read bytes in READ.  */
 static grub_ssize_t
 grub_hfs_read_file (struct grub_hfs_data *data,
-		    void NESTED_FUNC_ATTR (*read_hook) (grub_disk_addr_t sector,
-				       unsigned offset, unsigned length),
-		     int pos, grub_size_t len, char *buf)
+		    grub_disk_read_hook_t read_hook, void *read_hook_data,
+		    grub_uint32_t pos, grub_size_t len, char *buf)
 {
-  int i;
-  int blockcnt;
+  grub_off_t i;
+  grub_off_t blockcnt;
 
-  blockcnt = ((len + pos)
-	      + data->blksz - 1) / data->blksz;
+  /* Files are at most 2G/4G - 1 bytes on hfs. Avoid 64-bit division.
+     Moreover len > 0 as checked in upper layer.  */
+  blockcnt = (len + pos - 1) / data->blksz + 1;
 
   for (i = pos / data->blksz; i < blockcnt; i++)
     {
-      int blknr;
-      int blockoff = pos % data->blksz;
-      int blockend = data->blksz;
+      grub_disk_addr_t blknr;
+      grub_off_t blockoff;
+      grub_off_t blockend = data->blksz;
 
       int skipfirst = 0;
+
+      blockoff = pos % data->blksz;
 
       blknr = grub_hfs_block (data, data->extents, data->fileid, i, 1);
       if (grub_errno)
@@ -282,6 +289,7 @@ grub_hfs_read_file (struct grub_hfs_data *data,
       if (blknr)
 	{
 	  data->disk->read_hook = read_hook;
+	  data->disk->read_hook_data = read_hook_data;
 	  grub_disk_read (data->disk, blknr, skipfirst,
 			  blockend, buf);
 	  data->disk->read_hook = 0;
@@ -321,7 +329,8 @@ grub_hfs_mount (grub_disk_t disk)
     goto fail;
 
   /* Check if this is a HFS filesystem.  */
-  if (grub_be_to_cpu16 (data->sblock.magic) != GRUB_HFS_MAGIC)
+  if (grub_be_to_cpu16 (data->sblock.magic) != GRUB_HFS_MAGIC
+      || (data->sblock.blksz & grub_cpu_to_be32_compile_time (0xc00001ff)))
     {
       grub_error (GRUB_ERR_BAD_FS, "not an HFS filesystem");
       goto fail;
@@ -388,8 +397,8 @@ grub_hfs_mount (grub_disk_t disk)
 
 /* Compare the K1 and K2 catalog file keys using HFS character ordering.  */
 static int
-grub_hfs_cmp_catkeys (struct grub_hfs_catalog_key *k1,
-		      struct grub_hfs_catalog_key *k2)
+grub_hfs_cmp_catkeys (const struct grub_hfs_catalog_key *k1,
+		      const struct grub_hfs_catalog_key *k2)
 {
   /* Taken from hfsutils 3.2.6 and converted to a readable form */
   static const unsigned char hfs_charorder[256] = {
@@ -632,8 +641,8 @@ grub_hfs_cmp_catkeys (struct grub_hfs_catalog_key *k1,
 
 /* Compare the K1 and K2 extent overflow file keys.  */
 static int
-grub_hfs_cmp_extkeys (struct grub_hfs_extent_key *k1,
-		      struct grub_hfs_extent_key *k2)
+grub_hfs_cmp_extkeys (const struct grub_hfs_extent_key *k1,
+		      const struct grub_hfs_extent_key *k2)
 {
   int cmp = k1->forktype - k2->forktype;
   if (cmp == 0)
@@ -652,16 +661,25 @@ grub_hfs_cmp_extkeys (struct grub_hfs_extent_key *k1,
 static grub_err_t
 grub_hfs_iterate_records (struct grub_hfs_data *data, int type, int idx,
 			  int this, int (*node_hook) (struct grub_hfs_node *hnd,
-						      struct grub_hfs_record *))
+						      struct grub_hfs_record *,
+						      void *hook_arg),
+			  void *hook_arg)
 {
-  int nodesize = type == 0 ? data->cat_size : data->ext_size;
+  grub_size_t nodesize = type == 0 ? data->cat_size : data->ext_size;
 
-  union
+  union node_union
   {
     struct grub_hfs_node node;
-    char rawnode[nodesize];
-    grub_uint16_t offsets[nodesize / 2];
-  } node;
+    char rawnode[0];
+    grub_uint16_t offsets[0];
+  } *node;
+
+  if (nodesize < sizeof (struct grub_hfs_node))
+    nodesize = sizeof (struct grub_hfs_node);
+
+  node = grub_malloc (nodesize);
+  if (!node)
+    return grub_errno;
 
   do
     {
@@ -678,40 +696,94 @@ grub_hfs_iterate_records (struct grub_hfs_data *data, int type, int idx,
                             (type == 0) ? GRUB_HFS_CNID_CAT : GRUB_HFS_CNID_EXT,
 			    idx / (data->blksz / nodesize), 0);
       blk += (idx % (data->blksz / nodesize));
-      if (grub_errno)
-	return grub_errno;
 
-      if (grub_disk_read (data->disk, blk, 0,
-			  sizeof (node), &node))
-	return grub_errno;
+      if (grub_errno || grub_disk_read (data->disk, blk, 0,
+					nodesize, node))
+	{
+	  grub_free (node);
+	  return grub_errno;
+	}
 
       /* Iterate over all records in this node.  */
-      for (i = 0; i < grub_be_to_cpu16 (node.node.reccnt); i++)
+      for (i = 0; i < grub_be_to_cpu16 (node->node.reccnt); i++)
 	{
 	  int pos = (nodesize >> 1) - 1 - i;
  	  struct pointer
 	  {
 	    grub_uint8_t keylen;
 	    grub_uint8_t key;
-	  } __attribute__ ((packed)) *pnt;
-	  pnt = (struct pointer *) (grub_be_to_cpu16 (node.offsets[pos])
-				    + node.rawnode);
+	  } GRUB_PACKED *pnt;
+	  pnt = (struct pointer *) (grub_be_to_cpu16 (node->offsets[pos])
+				    + node->rawnode);
 
 	  struct grub_hfs_record rec =
 	    {
 	      &pnt->key,
 	      pnt->keylen,
 	      &pnt->key + pnt->keylen +(pnt->keylen + 1) % 2,
-	      nodesize - grub_be_to_cpu16 (node.offsets[pos])
+	      nodesize - grub_be_to_cpu16 (node->offsets[pos])
 	      - pnt->keylen - 1
 	    };
 
-	  if (node_hook (&node.node, &rec))
-	    return 0;
+	  if (node_hook (&node->node, &rec, hook_arg))
+	    {
+	      grub_free (node);
+	      return 0;
+	    }
 	}
 
-      idx = grub_be_to_cpu32 (node.node.next);
+      idx = grub_be_to_cpu32 (node->node.next);
     } while (idx && this);
+  grub_free (node);
+  return 0;
+}
+
+struct grub_hfs_find_node_node_found_ctx
+{
+  int found;
+  int isleaf;
+  int done;
+  int type;
+  const char *key;
+  char *datar;
+  grub_size_t datalen;
+};
+
+static int
+grub_hfs_find_node_node_found (struct grub_hfs_node *hnd, struct grub_hfs_record *rec,
+			       void *hook_arg)
+{
+  struct grub_hfs_find_node_node_found_ctx *ctx = hook_arg;
+  int cmp = 1;
+
+  if (ctx->type == 0)
+    cmp = grub_hfs_cmp_catkeys (rec->key, (const void *) ctx->key);
+  else
+    cmp = grub_hfs_cmp_extkeys (rec->key, (const void *) ctx->key);
+
+  /* If the key is smaller or equal to the current node, mark the
+     entry.  In case of a non-leaf mode it will be used to lookup
+     the rest of the tree.  */
+  if (cmp <= 0)
+    ctx->found = grub_be_to_cpu32 (grub_get_unaligned32 (rec->data));
+  else /* The key can not be found in the tree. */
+    return 1;
+
+  /* Check if this node is a leaf node.  */
+  if (hnd->type == GRUB_HFS_NODE_LEAF)
+    {
+      ctx->isleaf = 1;
+
+      /* Found it!!!!  */
+      if (cmp == 0)
+	{
+	  ctx->done = 1;
+
+	  grub_memcpy (ctx->datar, rec->data,
+		       rec->datalen < ctx->datalen ? rec->datalen : ctx->datalen);
+	  return 1;
+	}
+    }
 
   return 0;
 }
@@ -723,67 +795,84 @@ grub_hfs_iterate_records (struct grub_hfs_data *data, int type, int idx,
    the data in DATAR with a maximum length of DATALEN.  */
 static int
 grub_hfs_find_node (struct grub_hfs_data *data, char *key,
-		    grub_uint32_t idx, int type, char *datar, int datalen)
+		    grub_uint32_t idx, int type, char *datar, grub_size_t datalen)
 {
-  int found = -1;
-  int isleaf = 0;
-  int done = 0;
-
-  auto int node_found (struct grub_hfs_node *, struct grub_hfs_record *);
-
-  int node_found (struct grub_hfs_node *hnd, struct grub_hfs_record *rec)
+  struct grub_hfs_find_node_node_found_ctx ctx =
     {
-      int cmp = 1;
-
-      if (type == 0)
-	cmp = grub_hfs_cmp_catkeys (rec->key, (void *) key);
-      else
-	cmp = grub_hfs_cmp_extkeys (rec->key, (void *) key);
-
-      /* If the key is smaller or equal to the current node, mark the
-	 entry.  In case of a non-leaf mode it will be used to lookup
-	 the rest of the tree.  */
-      if (cmp <= 0)
-	{
-	  grub_uint32_t *node = (grub_uint32_t *) rec->data;
-	  found = grub_be_to_cpu32 (*node);
-	}
-      else /* The key can not be found in the tree. */
-	return 1;
-
-      /* Check if this node is a leaf node.  */
-      if (hnd->type == GRUB_HFS_NODE_LEAF)
-	{
-	  isleaf = 1;
-
-	  /* Found it!!!!  */
-	  if (cmp == 0)
-	    {
-              done = 1;
-
-	      grub_memcpy (datar, rec->data,
-			   rec->datalen < datalen ? rec->datalen : datalen);
-	      return 1;
-	    }
-	}
-
-      return 0;
-    }
+      .found = -1,
+      .isleaf = 0,
+      .done = 0,
+      .type = type,
+      .key = key,
+      .datar = datar,
+      .datalen = datalen
+    };
 
   do
     {
-      found = -1;
+      ctx.found = -1;
 
-      if (grub_hfs_iterate_records (data, type, idx, 0, node_found))
+      if (grub_hfs_iterate_records (data, type, idx, 0, grub_hfs_find_node_node_found, &ctx))
         return 0;
 
-      if (found == -1)
+      if (ctx.found == -1)
         return 0;
 
-      idx = found;
-    } while (! isleaf);
+      idx = ctx.found;
+    } while (! ctx.isleaf);
 
-  return done;
+  return ctx.done;
+}
+
+struct grub_hfs_iterate_dir_node_found_ctx
+{
+  grub_uint32_t dir_be;
+  int found;
+  int isleaf;
+  grub_uint32_t next;
+  int (*hook) (struct grub_hfs_record *, void *hook_arg);
+  void *hook_arg;
+};
+
+static int
+grub_hfs_iterate_dir_node_found (struct grub_hfs_node *hnd, struct grub_hfs_record *rec,
+				 void *hook_arg)
+{
+  struct grub_hfs_iterate_dir_node_found_ctx *ctx = hook_arg;
+  struct grub_hfs_catalog_key *ckey = rec->key;
+
+  /* The lowest key possible with DIR as root directory.  */
+  const struct grub_hfs_catalog_key key = {0, ctx->dir_be, 0, ""};
+
+  if (grub_hfs_cmp_catkeys (rec->key, &key) <= 0)
+    ctx->found = grub_be_to_cpu32 (grub_get_unaligned32 (rec->data));
+
+  if (hnd->type == 0xFF && ckey->strlen > 0)
+    {
+      ctx->isleaf = 1;
+      ctx->next = grub_be_to_cpu32 (hnd->next);
+
+      /* An entry was found.  */
+      if (ckey->parent_dir == ctx->dir_be)
+	return ctx->hook (rec, ctx->hook_arg);
+    }
+
+  return 0;
+}
+
+static int
+grub_hfs_iterate_dir_it_dir (struct grub_hfs_node *hnd __attribute ((unused)),
+			     struct grub_hfs_record *rec,
+			     void *hook_arg)
+{
+  struct grub_hfs_catalog_key *ckey = rec->key;
+  struct grub_hfs_iterate_dir_node_found_ctx *ctx = hook_arg;
+  
+  /* Stop when the entries do not match anymore.  */
+  if (ckey->parent_dir != ctx->dir_be)
+    return 1;
+
+  return ctx->hook (rec, ctx->hook_arg);
 }
 
 
@@ -792,71 +881,234 @@ grub_hfs_find_node (struct grub_hfs_data *data, char *key,
    call HOOK.  */
 static grub_err_t
 grub_hfs_iterate_dir (struct grub_hfs_data *data, grub_uint32_t root_idx,
-		      unsigned int dir, int (*hook) (struct grub_hfs_record *))
+		      grub_uint32_t dir, int (*hook) (struct grub_hfs_record *, void *hook_arg),
+		      void *hook_arg)
 {
-  int found = -1;
-  int isleaf = 0;
-  int next = 0;
-
-  /* The lowest key possible with DIR as root directory.  */
-  struct grub_hfs_catalog_key key = {0, grub_cpu_to_be32 (dir), 0, ""};
-
-  auto int node_found (struct grub_hfs_node *, struct grub_hfs_record *);
-  auto int it_dir (struct grub_hfs_node * __attribute ((unused)),
-		   struct grub_hfs_record *);
-
-
-  int node_found (struct grub_hfs_node *hnd, struct grub_hfs_record *rec)
-    {
-      struct grub_hfs_catalog_key *ckey = rec->key;
-
-      if (grub_hfs_cmp_catkeys (rec->key, (void *) &key) <= 0)
-	found = grub_be_to_cpu32 (*(grub_uint32_t *) rec->data);
-
-      if (hnd->type == 0xFF && ckey->strlen > 0)
-	{
-	  isleaf = 1;
-	  next = grub_be_to_cpu32 (hnd->next);
-
-	  /* An entry was found.  */
-	  if (grub_be_to_cpu32 (ckey->parent_dir) == dir)
-	    return hook (rec);
-	}
-
-      return 0;
-    }
-
-  int it_dir (struct grub_hfs_node *hnd __attribute ((unused)),
-	      struct grub_hfs_record *rec)
-    {
-      struct grub_hfs_catalog_key *ckey = rec->key;
-      struct grub_hfs_catalog_key *origkey = &key;
-
-      /* Stop when the entries do not match anymore.  */
-      if (grub_be_to_cpu32 (ckey->parent_dir)
-	  != grub_be_to_cpu32 ((origkey)->parent_dir))
-	return 1;
-
-      return hook (rec);
-    }
+  struct grub_hfs_iterate_dir_node_found_ctx ctx =
+  {
+    .dir_be = grub_cpu_to_be32 (dir),
+    .found = -1,
+    .isleaf = 0,
+    .next = 0,
+    .hook = hook,
+    .hook_arg = hook_arg
+  };
 
   do
     {
-      found = -1;
+      ctx.found = -1;
 
-      if (grub_hfs_iterate_records (data, 0, root_idx, 0, node_found))
+      if (grub_hfs_iterate_records (data, 0, root_idx, 0, grub_hfs_iterate_dir_node_found, &ctx))
         return grub_errno;
 
-      if (found == -1)
+      if (ctx.found == -1)
         return 0;
 
-      root_idx = found;
-    } while (! isleaf);
+      root_idx = ctx.found;
+    } while (! ctx.isleaf);
 
   /* If there was a matching record in this leaf node, continue the
      iteration until the last record was found.  */
-  grub_hfs_iterate_records (data, 0, next, 1, it_dir);
+  grub_hfs_iterate_records (data, 0, ctx.next, 1, grub_hfs_iterate_dir_it_dir, &ctx);
   return grub_errno;
+}
+
+#define MAX_UTF8_PER_MAC_ROMAN 3
+
+static const char macroman[0x80][MAX_UTF8_PER_MAC_ROMAN + 1] =
+  {
+    /* 80 */ "\xc3\x84",
+    /* 81 */ "\xc3\x85",
+    /* 82 */ "\xc3\x87",
+    /* 83 */ "\xc3\x89",
+    /* 84 */ "\xc3\x91",
+    /* 85 */ "\xc3\x96",
+    /* 86 */ "\xc3\x9c",
+    /* 87 */ "\xc3\xa1",
+    /* 88 */ "\xc3\xa0",
+    /* 89 */ "\xc3\xa2",
+    /* 8A */ "\xc3\xa4",
+    /* 8B */ "\xc3\xa3",
+    /* 8C */ "\xc3\xa5",
+    /* 8D */ "\xc3\xa7",
+    /* 8E */ "\xc3\xa9",
+    /* 8F */ "\xc3\xa8",
+    /* 90 */ "\xc3\xaa",
+    /* 91 */ "\xc3\xab",
+    /* 92 */ "\xc3\xad",
+    /* 93 */ "\xc3\xac",
+    /* 94 */ "\xc3\xae",
+    /* 95 */ "\xc3\xaf",
+    /* 96 */ "\xc3\xb1",
+    /* 97 */ "\xc3\xb3",
+    /* 98 */ "\xc3\xb2",
+    /* 99 */ "\xc3\xb4",
+    /* 9A */ "\xc3\xb6",
+    /* 9B */ "\xc3\xb5",
+    /* 9C */ "\xc3\xba",
+    /* 9D */ "\xc3\xb9",
+    /* 9E */ "\xc3\xbb",
+    /* 9F */ "\xc3\xbc",
+    /* A0 */ "\xe2\x80\xa0",
+    /* A1 */ "\xc2\xb0",
+    /* A2 */ "\xc2\xa2",
+    /* A3 */ "\xc2\xa3",
+    /* A4 */ "\xc2\xa7",
+    /* A5 */ "\xe2\x80\xa2",
+    /* A6 */ "\xc2\xb6",
+    /* A7 */ "\xc3\x9f",
+    /* A8 */ "\xc2\xae",
+    /* A9 */ "\xc2\xa9",
+    /* AA */ "\xe2\x84\xa2",
+    /* AB */ "\xc2\xb4",
+    /* AC */ "\xc2\xa8",
+    /* AD */ "\xe2\x89\xa0",
+    /* AE */ "\xc3\x86",
+    /* AF */ "\xc3\x98",
+    /* B0 */ "\xe2\x88\x9e",
+    /* B1 */ "\xc2\xb1",
+    /* B2 */ "\xe2\x89\xa4",
+    /* B3 */ "\xe2\x89\xa5",
+    /* B4 */ "\xc2\xa5",
+    /* B5 */ "\xc2\xb5",
+    /* B6 */ "\xe2\x88\x82",
+    /* B7 */ "\xe2\x88\x91",
+    /* B8 */ "\xe2\x88\x8f",
+    /* B9 */ "\xcf\x80",
+    /* BA */ "\xe2\x88\xab",
+    /* BB */ "\xc2\xaa",
+    /* BC */ "\xc2\xba",
+    /* BD */ "\xce\xa9",
+    /* BE */ "\xc3\xa6",
+    /* BF */ "\xc3\xb8",
+    /* C0 */ "\xc2\xbf",
+    /* C1 */ "\xc2\xa1",
+    /* C2 */ "\xc2\xac",
+    /* C3 */ "\xe2\x88\x9a",
+    /* C4 */ "\xc6\x92",
+    /* C5 */ "\xe2\x89\x88",
+    /* C6 */ "\xe2\x88\x86",
+    /* C7 */ "\xc2\xab",
+    /* C8 */ "\xc2\xbb",
+    /* C9 */ "\xe2\x80\xa6",
+    /* CA */ "\xc2\xa0",
+    /* CB */ "\xc3\x80",
+    /* CC */ "\xc3\x83",
+    /* CD */ "\xc3\x95",
+    /* CE */ "\xc5\x92",
+    /* CF */ "\xc5\x93",
+    /* D0 */ "\xe2\x80\x93",
+    /* D1 */ "\xe2\x80\x94",
+    /* D2 */ "\xe2\x80\x9c",
+    /* D3 */ "\xe2\x80\x9d",
+    /* D4 */ "\xe2\x80\x98",
+    /* D5 */ "\xe2\x80\x99",
+    /* D6 */ "\xc3\xb7",
+    /* D7 */ "\xe2\x97\x8a",
+    /* D8 */ "\xc3\xbf",
+    /* D9 */ "\xc5\xb8",
+    /* DA */ "\xe2\x81\x84",
+    /* DB */ "\xe2\x82\xac",
+    /* DC */ "\xe2\x80\xb9",
+    /* DD */ "\xe2\x80\xba",
+    /* DE */ "\xef\xac\x81",
+    /* DF */ "\xef\xac\x82",
+    /* E0 */ "\xe2\x80\xa1",
+    /* E1 */ "\xc2\xb7",
+    /* E2 */ "\xe2\x80\x9a",
+    /* E3 */ "\xe2\x80\x9e",
+    /* E4 */ "\xe2\x80\xb0",
+    /* E5 */ "\xc3\x82",
+    /* E6 */ "\xc3\x8a",
+    /* E7 */ "\xc3\x81",
+    /* E8 */ "\xc3\x8b",
+    /* E9 */ "\xc3\x88",
+    /* EA */ "\xc3\x8d",
+    /* EB */ "\xc3\x8e",
+    /* EC */ "\xc3\x8f",
+    /* ED */ "\xc3\x8c",
+    /* EE */ "\xc3\x93",
+    /* EF */ "\xc3\x94",
+    /* F0 */ "\xef\xa3\xbf",
+    /* F1 */ "\xc3\x92",
+    /* F2 */ "\xc3\x9a",
+    /* F3 */ "\xc3\x9b",
+    /* F4 */ "\xc3\x99",
+    /* F5 */ "\xc4\xb1",
+    /* F6 */ "\xcb\x86",
+    /* F7 */ "\xcb\x9c",
+    /* F8 */ "\xc2\xaf",
+    /* F9 */ "\xcb\x98",
+    /* FA */ "\xcb\x99",
+    /* FB */ "\xcb\x9a",
+    /* FC */ "\xc2\xb8",
+    /* FD */ "\xcb\x9d",
+    /* FE */ "\xcb\x9b",
+    /* FF */ "\xcb\x87",
+  };
+
+static void
+macroman_to_utf8 (char *to, const grub_uint8_t *from, grub_size_t len,
+		  int translate_slash)
+{
+  char *optr = to;
+  const grub_uint8_t *iptr;
+
+  for (iptr = from; iptr < from + len && *iptr; iptr++)
+    {
+      /* Translate '/' to ':' as per HFS spec.  */
+      if (*iptr == '/' && translate_slash)
+	{
+	  *optr++ = ':';
+	  continue;
+	}	
+      if (!(*iptr & 0x80))
+	{
+	  *optr++ = *iptr;
+	  continue;
+	}
+      optr = grub_stpcpy (optr, macroman[*iptr & 0x7f]);
+    }
+  *optr = 0;
+}
+
+static grub_ssize_t
+utf8_to_macroman (grub_uint8_t *to, const char *from)
+{
+  grub_uint8_t *end = to + 31;
+  grub_uint8_t *optr = to;
+  const char *iptr = from;
+  
+  while (*iptr && optr < end)
+    {
+      int i, clen;
+      /* Translate ':' to '/' as per HFS spec.  */
+      if (*iptr == ':')
+	{
+	  *optr++ = '/';
+	  iptr++;
+	  continue;
+	}	
+      if (!(*iptr & 0x80))
+	{
+	  *optr++ = *iptr++;
+	  continue;
+	}
+      clen = 2;
+      if ((*iptr & 0xf0) == 0xe0)
+	clen++;
+      for (i = 0; i < 0x80; i++)
+	if (grub_memcmp (macroman[i], iptr, clen) == 0)
+	  break;
+      if (i == 0x80)
+	break;
+      *optr++ = i | 0x80;
+      iptr += clen;
+    }
+  /* Too long or not encodable.  */
+  if (*iptr)
+    return -1;
+  return optr - to;
 }
 
 
@@ -879,7 +1131,7 @@ grub_hfs_find_dir (struct grub_hfs_data *data, const char *path,
 
   if (path[0] != '/')
     {
-      grub_error (GRUB_ERR_BAD_FILENAME, "bad filename");
+      grub_error (GRUB_ERR_BAD_FILENAME, N_("invalid file name `%s'"), path);
       return 0;
     }
 
@@ -893,9 +1145,10 @@ grub_hfs_find_dir (struct grub_hfs_data *data, const char *path,
 
   while (path && grub_strlen (path))
     {
+      grub_ssize_t slen;
       if (fdrec.frec.type != GRUB_HFS_FILETYPE_DIR)
 	{
-	  grub_error (GRUB_ERR_BAD_FILE_TYPE, "not a directory");
+	  grub_error (GRUB_ERR_BAD_FILE_TYPE, N_("not a directory"));
 	  goto fail;
 	}
 
@@ -910,14 +1163,19 @@ grub_hfs_find_dir (struct grub_hfs_data *data, const char *path,
       struct grub_hfs_catalog_key key;
 
       key.parent_dir = grub_cpu_to_be32 (inode);
-      key.strlen = grub_strlen (path);
-      grub_strcpy ((char *) (key.str), path);
+      slen = utf8_to_macroman (key.str, path);
+      if (slen < 0)
+	{
+	  grub_error (GRUB_ERR_FILE_NOT_FOUND, N_("file `%s' not found"), path);
+	  goto fail;
+	}
+      key.strlen = slen;
 
       /* Lookup this node.  */
       if (! grub_hfs_find_node (data, (char *) &key, data->cat_root,
 				0, (char *) &fdrec.frec, sizeof (fdrec.frec)))
 	{
-	  grub_error (GRUB_ERR_FILE_NOT_FOUND, "file not found");
+	  grub_error (GRUB_ERR_FILE_NOT_FOUND, N_("file `%s' not found"), origpath);
 	  goto fail;
 	}
 
@@ -939,38 +1197,70 @@ grub_hfs_find_dir (struct grub_hfs_data *data, const char *path,
   return grub_errno;
 }
 
+struct grub_hfs_dir_hook_ctx
+{
+  grub_fs_dir_hook_t hook;
+  void *hook_data;
+};
+
+static int
+grub_hfs_dir_hook (struct grub_hfs_record *rec, void *hook_arg)
+{
+  struct grub_hfs_dir_hook_ctx *ctx = hook_arg;
+  struct grub_hfs_dirrec *drec = rec->data;
+  struct grub_hfs_filerec *frec = rec->data;
+  struct grub_hfs_catalog_key *ckey = rec->key;
+  char fname[sizeof (ckey->str) * MAX_UTF8_PER_MAC_ROMAN + 1];
+  struct grub_dirhook_info info;
+  grub_size_t len;
+
+  grub_memset (fname, 0, sizeof (fname));
+
+  grub_memset (&info, 0, sizeof (info));
+
+  len = ckey->strlen;
+  if (len > sizeof (ckey->str))
+    len = sizeof (ckey->str);
+  macroman_to_utf8 (fname, ckey->str, len, 1);
+
+  info.case_insensitive = 1;
+
+  if (drec->type == GRUB_HFS_FILETYPE_DIR)
+    {
+      info.dir = 1;
+      info.mtimeset = 1;
+      info.inodeset = 1;
+      info.mtime = grub_be_to_cpu32 (drec->mtime) - 2082844800;
+      info.inode = grub_be_to_cpu32 (drec->dirid);
+      return ctx->hook (fname, &info, ctx->hook_data);
+    }
+  if (frec->type == GRUB_HFS_FILETYPE_FILE)
+    {
+      info.dir = 0;
+      info.mtimeset = 1;
+      info.inodeset = 1;
+      info.mtime = grub_be_to_cpu32 (frec->mtime) - 2082844800;
+      info.inode = grub_be_to_cpu32 (frec->fileid);
+      return ctx->hook (fname, &info, ctx->hook_data);
+    }
+
+  return 0;
+}
 
 
 static grub_err_t
-grub_hfs_dir (grub_device_t device, const char *path,
-		  int (*hook) (const char *filename,
-			       const struct grub_dirhook_info *info))
+grub_hfs_dir (grub_device_t device, const char *path, grub_fs_dir_hook_t hook,
+	      void *hook_data)
 {
   int inode;
 
-  auto int dir_hook (struct grub_hfs_record *rec);
-
-  int dir_hook (struct grub_hfs_record *rec)
-    {
-      char fname[32] = { 0 };
-      char *filetype = rec->data;
-      struct grub_hfs_catalog_key *ckey = rec->key;
-      struct grub_dirhook_info info;
-      grub_memset (&info, 0, sizeof (info));
-
-      grub_strncpy (fname, (char *) (ckey->str), ckey->strlen);
-
-      if (*filetype == GRUB_HFS_FILETYPE_DIR
-	  || *filetype == GRUB_HFS_FILETYPE_FILE)
-	{
-	  info.dir = (*filetype == GRUB_HFS_FILETYPE_DIR);
-	  return hook (fname, &info);
-	}
-      return 0;
-    }
-
   struct grub_hfs_data *data;
   struct grub_hfs_filerec frec;
+  struct grub_hfs_dir_hook_ctx ctx =
+    {
+      .hook = hook,
+      .hook_data = hook_data
+    };
 
   grub_dl_ref (my_mod);
 
@@ -984,11 +1274,11 @@ grub_hfs_dir (grub_device_t device, const char *path,
 
   if (frec.type != GRUB_HFS_FILETYPE_DIR)
     {
-      grub_error (GRUB_ERR_BAD_FILE_TYPE, "not a directory");
+      grub_error (GRUB_ERR_BAD_FILE_TYPE, N_("not a directory"));
       goto fail;
     }
 
-  grub_hfs_iterate_dir (data, data->cat_root, inode, dir_hook);
+  grub_hfs_iterate_dir (data, data->cat_root, inode, grub_hfs_dir_hook, &ctx);
 
  fail:
   grub_free (data);
@@ -1020,7 +1310,7 @@ grub_hfs_open (struct grub_file *file, const char *name)
   if (frec.type != GRUB_HFS_FILETYPE_FILE)
     {
       grub_free (data);
-      grub_error (GRUB_ERR_BAD_FILE_TYPE, "not a file");
+      grub_error (GRUB_ERR_BAD_FILE_TYPE, N_("not a regular file"));
       grub_dl_unref (my_mod);
       return grub_errno;
     }
@@ -1042,7 +1332,8 @@ grub_hfs_read (grub_file_t file, char *buf, grub_size_t len)
   struct grub_hfs_data *data =
     (struct grub_hfs_data *) file->data;
 
-  return grub_hfs_read_file (data, file->read_hook, file->offset, len, buf);
+  return grub_hfs_read_file (data, file->read_hook, file->read_hook_data,
+			     file->offset, len, buf);
 }
 
 
@@ -1065,10 +1356,33 @@ grub_hfs_label (grub_device_t device, char **label)
   data = grub_hfs_mount (device->disk);
 
   if (data)
-    *label = grub_strndup ((char *) (data->sblock.volname + 1),
-			   *data->sblock.volname);
+    {
+      grub_size_t len = data->sblock.volname[0];
+      if (len > sizeof (data->sblock.volname) - 1)
+	len = sizeof (data->sblock.volname) - 1;
+      *label = grub_malloc (len * MAX_UTF8_PER_MAC_ROMAN + 1);
+      if (*label)
+	macroman_to_utf8 (*label, data->sblock.volname + 1,
+			  len + 1, 0);
+    }
   else
     *label = 0;
+
+  grub_free (data);
+  return grub_errno;
+}
+
+static grub_err_t
+grub_hfs_mtime (grub_device_t device, grub_int32_t *tm)
+{
+  struct grub_hfs_data *data;
+
+  data = grub_hfs_mount (device->disk);
+
+  if (data)
+    *tm = grub_be_to_cpu32 (data->sblock.mtime) - 2082844800;
+  else
+    *tm = 0;
 
   grub_free (data);
   return grub_errno;
@@ -1109,6 +1423,11 @@ static struct grub_fs grub_hfs_fs =
     .close = grub_hfs_close,
     .label = grub_hfs_label,
     .uuid = grub_hfs_uuid,
+    .mtime = grub_hfs_mtime,
+#ifdef GRUB_UTIL
+    .reserved_first_sector = 1,
+    .blocklist_install = 1,
+#endif
     .next = 0
   };
 

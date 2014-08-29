@@ -17,44 +17,48 @@ set -e
 # You should have received a copy of the GNU General Public License
 # along with GRUB.  If not, see <http://www.gnu.org/licenses/>.
 
-transform="@program_transform_name@"
+prefix="@prefix@"
+exec_prefix="@exec_prefix@"
+datarootdir="@datarootdir@"
 
-prefix=@prefix@
-exec_prefix=@exec_prefix@
-sbindir=@sbindir@
-bindir=@bindir@
-libdir=@libdir@
-sysconfdir=@sysconfdir@
+prefix="@prefix@"
+exec_prefix="@exec_prefix@"
+sbindir="@sbindir@"
+bindir="@bindir@"
+sysconfdir="@sysconfdir@"
 PACKAGE_NAME=@PACKAGE_NAME@
 PACKAGE_VERSION=@PACKAGE_VERSION@
 host_os=@host_os@
-datarootdir=@datarootdir@
-datadir=@datadir@
-pkgdatadir=${datadir}/`echo @PACKAGE_TARNAME@ | sed "${transform}"`
+datadir="@datadir@"
+if [ "x$pkgdatadir" = x ]; then
+    pkgdatadir="${datadir}/@PACKAGE@"
+fi
 grub_cfg=""
-grub_mkconfig_dir=${sysconfdir}/grub.d
+grub_mkconfig_dir="${sysconfdir}"/grub.d
 
 self=`basename $0`
 
-grub_mkdevicemap=${sbindir}/`echo grub-mkdevicemap | sed "${transform}"`
-grub_probe=${sbindir}/`echo grub-probe | sed "${transform}"`
-grub_script_check="${bindir}/`echo grub-script-check | sed "${transform}"`"
+grub_probe="${sbindir}/@grub_probe@"
+grub_file="${bindir}/@grub_file@"
+grub_editenv="${bindir}/@grub_editenv@"
+grub_script_check="${bindir}/@grub_script_check@"
 
-GRUB_PREFIX=`echo '/@bootdirname@/@grubdirname@' | sed "s,//*,/,g"`
+export TEXTDOMAIN=@PACKAGE@
+export TEXTDOMAINDIR="@localedir@"
+
+. "${pkgdatadir}/grub-mkconfig_lib"
 
 # Usage: usage
 # Print the usage.
 usage () {
-    cat <<EOF
-Usage: $self [OPTION]
-Generate a grub config file
-
-  -o, --output=FILE       output generated config to FILE [default=stdout]
-  -h, --help              print this message and exit
-  -v, --version           print the version information and exit
-
-Report bugs to <bug-grub@gnu.org>.
-EOF
+    gettext_printf "Usage: %s [OPTION]\n" "$self"
+    gettext "Generate a grub config file"; echo
+    echo
+    print_option_help "-o, --output=$(gettext FILE)" "$(gettext "output generated config to FILE [default=stdout]")"
+    print_option_help "-h, --help" "$(gettext "print this message and exit")"
+    print_option_help "-v, --version" "$(gettext "print the version information and exit")"
+    echo
+    gettext "Report bugs to <bug-grub@gnu.org>."; echo
 }
 
 argument () {
@@ -62,7 +66,7 @@ argument () {
   shift
 
   if test $# -eq 0; then
-      echo "$0: option requires an argument -- '$opt'" 1>&2
+      gettext_printf "%s: option requires an argument -- \`%s'\n" "$self" "$opt" 1>&2
       exit 1
   fi
   echo $1
@@ -87,15 +91,13 @@ do
 	grub_cfg=`echo "$option" | sed 's/--output=//'`
 	;;
     -*)
-	echo "Unrecognized option \`$option'" 1>&2
+	gettext_printf "Unrecognized option \`%s'\n" "$option" 1>&2
 	usage
 	exit 1
 	;;
     # Explicitly ignore non-option arguments, for compatibility.
     esac
 done
-
-. ${libdir}/grub/grub-mkconfig_lib
 
 if [ "x$EUID" = "x" ] ; then
   EUID=`id -u`
@@ -113,31 +115,17 @@ if [ "$EUID" != 0 ] ; then
       done ;;
   esac
   if [ $root != t ] ; then
-    echo "$self: You must run this as root" >&2
+    gettext_printf "%s: You must run this as root\n" "$self" >&2
     exit 1
   fi
-fi
-
-set $grub_mkdevicemap dummy
-if test -f "$1"; then
-    :
-else
-    echo "$1: Not found." 1>&2
-    exit 1
 fi
 
 set $grub_probe dummy
 if test -f "$1"; then
     :
 else
-    echo "$1: Not found." 1>&2
+    gettext_print "%s: Not found.\n" "$1" 1>&2
     exit 1
-fi
-
-mkdir -p ${GRUB_PREFIX}
-
-if test -e ${GRUB_PREFIX}/device.map ; then : ; else
-  ${grub_mkdevicemap}
 fi
 
 # Device containing our userland.  Typically used for root= parameter.
@@ -151,6 +139,10 @@ GRUB_DEVICE_BOOT_UUID="`${grub_probe} --device ${GRUB_DEVICE_BOOT} --target=fs_u
 # Filesystem for the device containing our userland.  Used for stuff like
 # choosing Hurd filesystem module.
 GRUB_FS="`${grub_probe} --device ${GRUB_DEVICE} --target=fs 2> /dev/null || echo unknown`"
+
+if [ x"$GRUB_FS" = xunknown ]; then
+    GRUB_FS="$(stat -f --printf=%T / || echo unknown)"
+fi
 
 if test -f ${sysconfdir}/default/grub ; then
   . ${sysconfdir}/default/grub
@@ -169,49 +161,19 @@ if [ "x${GRUB_TERMINAL_OUTPUT}" = "x" ]; then
 fi
 
 for x in ${GRUB_TERMINAL_OUTPUT}; do
-    if [ "x${x}" = "xgfxterm" ]; then
-	if [ -n "$GRUB_FONT" ] ; then
-	    if is_path_readable_by_grub ${GRUB_FONT} > /dev/null ; then
-		GRUB_FONT_PATH=${GRUB_FONT}
-	    else
-		echo "No such font or not readable by grub: ${GRUB_FONT}" >&2
-		exit 1
-	    fi
-	else
-	    for dir in ${pkgdatadir} ${GRUB_PREFIX} /usr/share/grub ; do
-		for basename in unicode unifont ascii; do
-		    path="${dir}/${basename}.pf2"
-		    if is_path_readable_by_grub ${path} > /dev/null ; then
-			GRUB_FONT_PATH=${path}
-		    else
-			continue
-		    fi
-		    if [ "${basename}" = "ascii" ] ; then
-	                # make sure all our children behave in conformance with ascii..
-			export LANG=C
-		    fi
-		    break 2
-		done
-	    done
-	fi
-	if [ -z "${GRUB_FONT_PATH}" ] ; then
-	    if [ "x$termoutdefault" != "x1" ]; then
-		echo "No font for gfxterm found." >&2 ; exit 1
-	    fi
-	    GRUB_TERMINAL_OUTPUT=
-	fi
-    fi
-done
-
-for x in ${GRUB_TERMINAL_OUTPUT}; do
     case "x${x}" in
 	xgfxterm) ;;
-	xconsole | xserial | xofconsole)
+	xconsole | xserial | xofconsole | xvga_text)
             # make sure all our children behave in conformance with ascii..
 	    export LANG=C;;
 	*) echo "Invalid output terminal \"${GRUB_TERMINAL_OUTPUT}\"" >&2 ; exit 1 ;;
     esac
 done
+
+GRUB_ACTUAL_DEFAULT="$GRUB_DEFAULT"
+
+if [ "x${GRUB_ACTUAL_DEFAULT}" = "xsaved" ] ; then GRUB_ACTUAL_DEFAULT="`"${grub_editenv}" - list | sed -n '/^saved_entry=/ s,^saved_entry=,,p'`" ; fi
+
 
 # These are defined in this script, export them here so that user can
 # override them.
@@ -220,18 +182,20 @@ export GRUB_DEVICE \
   GRUB_DEVICE_BOOT \
   GRUB_DEVICE_BOOT_UUID \
   GRUB_FS \
-  GRUB_FONT_PATH \
+  GRUB_FONT \
   GRUB_PRELOAD_MODULES \
-  GRUB_PREFIX
+  GRUB_ACTUAL_DEFAULT
 
 # These are optional, user-defined variables.
 export GRUB_DEFAULT \
   GRUB_HIDDEN_TIMEOUT \
   GRUB_HIDDEN_TIMEOUT_QUIET \
   GRUB_TIMEOUT \
+  GRUB_TIMEOUT_STYLE \
   GRUB_DEFAULT_BUTTON \
   GRUB_HIDDEN_TIMEOUT_BUTTON \
   GRUB_TIMEOUT_BUTTON \
+  GRUB_TIMEOUT_STYLE_BUTTON \
   GRUB_BUTTON_CMOS_ADDRESS \
   GRUB_BUTTON_CMOS_CLEAN \
   GRUB_DISTRIBUTOR \
@@ -239,8 +203,11 @@ export GRUB_DEFAULT \
   GRUB_CMDLINE_LINUX_DEFAULT \
   GRUB_CMDLINE_XEN \
   GRUB_CMDLINE_XEN_DEFAULT \
+  GRUB_CMDLINE_LINUX_XEN_REPLACE \
+  GRUB_CMDLINE_LINUX_XEN_REPLACE_DEFAULT \
   GRUB_CMDLINE_NETBSD \
   GRUB_CMDLINE_NETBSD_DEFAULT \
+  GRUB_CMDLINE_GNUMACH \
   GRUB_TERMINAL_INPUT \
   GRUB_TERMINAL_OUTPUT \
   GRUB_SERIAL_COMMAND \
@@ -254,18 +221,19 @@ export GRUB_DEFAULT \
   GRUB_DISABLE_OS_PROBER \
   GRUB_INIT_TUNE \
   GRUB_SAVEDEFAULT \
-  GRUB_BADRAM
+  GRUB_ENABLE_CRYPTODISK \
+  GRUB_BADRAM \
+  GRUB_OS_PROBER_SKIP_LIST \
+  GRUB_DISABLE_SUBMENU
 
 if test "x${grub_cfg}" != "x"; then
-  rm -f ${grub_cfg}.new
-  exec > ${grub_cfg}.new
-
-  # Allow this to fail, since /boot/grub/ might need to be fatfs to support some
-  # firmware implementations (e.g. OFW or EFI).
-  chmod 400 ${grub_cfg}.new || grub_warn "Could not make ${grub_cfg}.new readable by only root.\
-  This means that if the generated config contains a password it is readable by everyone"
+  rm -f "${grub_cfg}.new"
+  oldumask=$(umask); umask 077
+  exec > "${grub_cfg}.new"
+  umask $oldumask
 fi
-echo "Generating grub.cfg ..." >&2
+gettext "Generating grub configuration file ..." >&2
+echo >&2
 
 cat << EOF
 #
@@ -276,12 +244,13 @@ cat << EOF
 #
 EOF
 
-for i in ${grub_mkconfig_dir}/* ; do
+
+for i in "${grub_mkconfig_dir}"/* ; do
   case "$i" in
     # emacsen backup files. FIXME: support other editors
     *~) ;;
     # emacsen autosave files. FIXME: support other editors
-    \#*\#) ;;
+    */\#*\#) ;;
     *)
       if grub_file_is_not_garbage "$i" && test -x "$i" ; then
         echo
@@ -295,14 +264,17 @@ done
 
 if test "x${grub_cfg}" != "x" ; then
   if ! ${grub_script_check} ${grub_cfg}.new; then
-    echo "Syntax errors are detected in generated GRUB config file." >&2
-    echo "Ensure that there are no errors in /etc/default/grub" >&2
-    echo "and /etc/grub.d/* files or please file a bug report with" >&2
-    echo "${grub_cfg}.new file attached." >&2
+    # TRANSLATORS: %s is replaced by filename
+    gettext_printf "Syntax errors are detected in generated GRUB config file.
+Ensure that there are no errors in /etc/default/grub
+and /etc/grub.d/* files or please file a bug report with
+%s file attached." "${grub_cfg}.new" >&2
+    echo >&2
   else
     # none of the children aborted with error, install the new grub.cfg
     mv -f ${grub_cfg}.new ${grub_cfg}
   fi
 fi
 
-echo "done" >&2
+gettext "done" >&2
+echo >&2

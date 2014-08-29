@@ -16,21 +16,22 @@
  *  You should have received a copy of the GNU General Public License
  *  along with GRUB.  If not, see <http://www.gnu.org/licenses/>.
  */
+
+#include <config-util.h>
+
 #define _BSD_SOURCE
 #include <grub/fs.h>
 #include <grub/file.h>
 #include <grub/disk.h>
 #include <grub/misc.h>
+#include <grub/mm.h>
 #include <grub/dl.h>
 #include <grub/util/misc.h>
+#include <grub/emu/hostdisk.h>
+#include <grub/i18n.h>
 
-#include <dirent.h>
 #include <stdio.h>
 #include <errno.h>
-
-
-/* dirent.d_type is a BSD extension, not part of POSIX */
-#include <sys/stat.h>
 #include <string.h>
 
 static int
@@ -38,8 +39,9 @@ is_dir (const char *path, const char *name)
 {
   int len1 = strlen(path);
   int len2 = strlen(name);
+  int ret;
 
-  char pathname[len1 + 1 + len2 + 1 + 13];
+  char *pathname = xmalloc (len1 + 1 + len2 + 1 + 13);
   strcpy (pathname, path);
 
   /* Avoid UNC-path "//name" on Cygwin.  */
@@ -48,44 +50,49 @@ is_dir (const char *path, const char *name)
 
   strcat (pathname, name);
 
-  struct stat st;
-  if (stat (pathname, &st))
-    return 0;
-  return S_ISDIR (st.st_mode);
+  ret = grub_util_is_directory (pathname);
+  free (pathname);
+  return ret;
 }
+
+struct grub_hostfs_data
+{
+  char *filename;
+  grub_util_fd_t f;
+};
 
 static grub_err_t
 grub_hostfs_dir (grub_device_t device, const char *path,
-		 int (*hook) (const char *filename,
-			      const struct grub_dirhook_info *info))
+		 grub_fs_dir_hook_t hook, void *hook_data)
 {
-  DIR *dir;
+  grub_util_fd_dir_t dir;
 
   /* Check if the disk is our dummy disk.  */
   if (grub_strcmp (device->disk->name, "host"))
     return grub_error (GRUB_ERR_BAD_FS, "not a hostfs");
 
-  dir = opendir (path);
+  dir = grub_util_fd_opendir (path);
   if (! dir)
     return grub_error (GRUB_ERR_BAD_FILENAME,
-		       "can't open the hostfs directory `%s'", path);
+		       N_("can't open `%s': %s"), path,
+		       grub_util_fd_strerror ());
 
   while (1)
     {
-      struct dirent *de;
+      grub_util_fd_dirent_t de;
       struct grub_dirhook_info info;
       grub_memset (&info, 0, sizeof (info));
 
-      de = readdir (dir);
+      de = grub_util_fd_readdir (dir);
       if (! de)
 	break;
 
       info.dir = !! is_dir (path, de->d_name);
-      hook (de->d_name, &info);
+      hook (de->d_name, &info, hook_data);
 
     }
 
-  closedir (dir);
+  grub_util_fd_closedir (dir);
 
   return GRUB_ERR_NONE;
 }
@@ -94,21 +101,33 @@ grub_hostfs_dir (grub_device_t device, const char *path,
 static grub_err_t
 grub_hostfs_open (struct grub_file *file, const char *name)
 {
-  FILE *f;
+  grub_util_fd_t f;
+  struct grub_hostfs_data *data;
 
-  f = fopen (name, "rb");
-  if (! f)
+  f = grub_util_fd_open (name, GRUB_UTIL_FD_O_RDONLY);
+  if (! GRUB_UTIL_FD_IS_VALID (f))
     return grub_error (GRUB_ERR_BAD_FILENAME,
-		       "can't open `%s'", name);
-  file->data = f;
+		       N_("can't open `%s': %s"), name,
+		       strerror (errno));
+  data = grub_malloc (sizeof (*data));
+  if (!data)
+    {
+      grub_util_fd_close (f);
+      return grub_errno;
+    }
+  data->filename = grub_strdup (name);
+  if (!data->filename)
+    {
+      grub_free (data);
+      grub_util_fd_close (f);
+      return grub_errno;
+    }
 
-#ifdef __MINGW32__
-  file->size = grub_util_get_disk_size (name);
-#else
-  fseeko (f, 0, SEEK_END);
-  file->size = ftello (f);
-  fseeko (f, 0, SEEK_SET);
-#endif
+  data->f = f;  
+
+  file->data = data;
+
+  file->size = grub_util_get_fd_size (f, name, NULL);
 
   return GRUB_ERR_NONE;
 }
@@ -116,18 +135,20 @@ grub_hostfs_open (struct grub_file *file, const char *name)
 static grub_ssize_t
 grub_hostfs_read (grub_file_t file, char *buf, grub_size_t len)
 {
-  FILE *f;
+  struct grub_hostfs_data *data;
 
-  f = (FILE *) file->data;
-  if (fseeko (f, file->offset, SEEK_SET) != 0)
+  data = file->data;
+  if (grub_util_fd_seek (data->f, file->offset) != 0)
     {
-      grub_error (GRUB_ERR_OUT_OF_RANGE, "fseeko: %s", strerror (errno));
+      grub_error (GRUB_ERR_OUT_OF_RANGE, N_("cannot seek `%s': %s"),
+		  data->filename, grub_util_fd_strerror ());
       return -1;
     }
 
-  unsigned int s = fread (buf, 1, len, f);
+  unsigned int s = grub_util_fd_read (data->f, buf, len);
   if (s != len)
-    grub_error (GRUB_ERR_FILE_READ_ERROR, "fread: %s", strerror (errno));
+    grub_error (GRUB_ERR_FILE_READ_ERROR, N_("cannot read `%s': %s"),
+		data->filename, grub_util_fd_strerror ());
 
   return (signed) s;
 }
@@ -135,10 +156,12 @@ grub_hostfs_read (grub_file_t file, char *buf, grub_size_t len)
 static grub_err_t
 grub_hostfs_close (grub_file_t file)
 {
-  FILE *f;
+  struct grub_hostfs_data *data;
 
-  f = (FILE *) file->data;
-  fclose (f);
+  data = file->data;
+  grub_util_fd_close (data->f);
+  grub_free (data->filename);
+  grub_free (data);
 
   return GRUB_ERR_NONE;
 }

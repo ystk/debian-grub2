@@ -26,6 +26,8 @@
 #include <grub/types.h>
 #include <grub/fshelp.h>
 #include <grub/charset.h>
+#include <grub/datetime.h>
+#include <grub/udf.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -115,32 +117,32 @@ struct grub_udf_lb_addr
 {
   grub_uint32_t block_num;
   grub_uint16_t part_ref;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_short_ad
 {
   grub_uint32_t length;
   grub_uint32_t position;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_long_ad
 {
   grub_uint32_t length;
   struct grub_udf_lb_addr block;
   grub_uint8_t imp_use[6];
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_extent_ad
 {
   grub_uint32_t length;
   grub_uint32_t start;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_charspec
 {
   grub_uint8_t charset_type;
   grub_uint8_t charset_info[63];
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_timestamp
 {
@@ -154,14 +156,14 @@ struct grub_udf_timestamp
   grub_uint8_t centi_seconds;
   grub_uint8_t hundreds_of_micro_seconds;
   grub_uint8_t micro_seconds;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_regid
 {
   grub_uint8_t flags;
   grub_uint8_t ident[23];
   grub_uint8_t ident_suffix[8];
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_tag
 {
@@ -173,7 +175,7 @@ struct grub_udf_tag
   grub_uint16_t desc_crc;
   grub_uint16_t desc_crc_length;
   grub_uint32_t tag_location;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_fileset
 {
@@ -195,7 +197,7 @@ struct grub_udf_fileset
   struct grub_udf_regid domain_ident;
   struct grub_udf_long_ad next_ext;
   struct grub_udf_long_ad streamdir_icb;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_icbtag
 {
@@ -207,17 +209,18 @@ struct grub_udf_icbtag
   grub_uint8_t file_type;
   struct grub_udf_lb_addr parent_idb;
   grub_uint16_t flags;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_file_ident
 {
   struct grub_udf_tag tag;
   grub_uint16_t version_num;
   grub_uint8_t characteristics;
+#define MAX_FILE_IDENT_LENGTH 256
   grub_uint8_t file_ident_length;
   struct grub_udf_long_ad icb;
   grub_uint16_t imp_use_length;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_file_entry
 {
@@ -241,8 +244,8 @@ struct grub_udf_file_entry
   grub_uint64_t unique_id;
   grub_uint32_t ext_attr_length;
   grub_uint32_t alloc_descs_length;
-  grub_uint8_t ext_attr[1872];
-} __attribute__ ((packed));
+  grub_uint8_t ext_attr[0];
+} GRUB_PACKED;
 
 struct grub_udf_extended_file_entry
 {
@@ -270,21 +273,21 @@ struct grub_udf_extended_file_entry
   grub_uint64_t unique_id;
   grub_uint32_t ext_attr_length;
   grub_uint32_t alloc_descs_length;
-  grub_uint8_t ext_attr[1832];
-} __attribute__ ((packed));
+  grub_uint8_t ext_attr[0];
+} GRUB_PACKED;
 
 struct grub_udf_vrs
 {
   grub_uint8_t type;
   grub_uint8_t magic[5];
   grub_uint8_t version;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_avdp
 {
   struct grub_udf_tag tag;
   struct grub_udf_extent_ad vds;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_pd
 {
@@ -297,7 +300,7 @@ struct grub_udf_pd
   grub_uint32_t access_type;
   grub_uint32_t start;
   grub_uint32_t length;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_partmap
 {
@@ -316,7 +319,7 @@ struct grub_udf_partmap
       grub_uint8_t ident[62];
     } type2;
   };
-};
+} GRUB_PACKED;
 
 struct grub_udf_lvd
 {
@@ -333,14 +336,14 @@ struct grub_udf_lvd
   grub_uint8_t imp_use[128];
   struct grub_udf_extent_ad integrity_seq_ext;
   grub_uint8_t part_maps[1608];
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_aed
 {
   struct grub_udf_tag tag;
   grub_uint32_t prev_ae;
   grub_uint32_t ae_len;
-} __attribute__ ((packed));
+} GRUB_PACKED;
 
 struct grub_udf_data
 {
@@ -355,13 +358,23 @@ struct grub_udf_data
 struct grub_fshelp_node
 {
   struct grub_udf_data *data;
+  int part_ref;
   union
   {
     struct grub_udf_file_entry fe;
     struct grub_udf_extended_file_entry efe;
-  };
-  int part_ref;
+    char raw[0];
+  } block;
 };
+
+static inline grub_size_t
+get_fshelp_size (struct grub_udf_data *data)
+{
+  struct grub_fshelp_node *x = NULL;
+  return sizeof (*x)
+    + (1 << (GRUB_DISK_SECTOR_BITS
+	     + data->lbshift)) - sizeof (x->block);
+}
 
 static grub_dl_t my_mod;
 
@@ -396,12 +409,13 @@ grub_udf_read_icb (struct grub_udf_data *data,
     return grub_errno;
 
   if (grub_disk_read (data->disk, block << data->lbshift, 0,
-		      sizeof (struct grub_udf_file_entry),
-		      &node->fe))
+		      1 << (GRUB_DISK_SECTOR_BITS
+			    + data->lbshift),
+		      &node->block))
     return grub_errno;
 
-  if ((U16 (node->fe.tag.tag_ident) != GRUB_UDF_TAG_IDENT_FE) &&
-      (U16 (node->fe.tag.tag_ident) != GRUB_UDF_TAG_IDENT_EFE))
+  if ((U16 (node->block.fe.tag.tag_ident) != GRUB_UDF_TAG_IDENT_FE) &&
+      (U16 (node->block.fe.tag.tag_ident) != GRUB_UDF_TAG_IDENT_EFE))
     return grub_error (GRUB_ERR_BAD_FS, "invalid fe/efe descriptor");
 
   node->part_ref = icb->block.part_ref;
@@ -417,16 +431,16 @@ grub_udf_read_block (grub_fshelp_node_t node, grub_disk_addr_t fileblock)
   grub_ssize_t len;
   grub_disk_addr_t filebytes;
 
-  switch (U16 (node->fe.tag.tag_ident))
+  switch (U16 (node->block.fe.tag.tag_ident))
     {
     case GRUB_UDF_TAG_IDENT_FE:
-      ptr = (char *) &node->fe.ext_attr[0] + U32 (node->fe.ext_attr_length);
-      len = U32 (node->fe.alloc_descs_length);
+      ptr = (char *) &node->block.fe.ext_attr[0] + U32 (node->block.fe.ext_attr_length);
+      len = U32 (node->block.fe.alloc_descs_length);
       break;
 
     case GRUB_UDF_TAG_IDENT_EFE:
-      ptr = (char *) &node->efe.ext_attr[0] + U32 (node->efe.ext_attr_length);
-      len = U32 (node->efe.alloc_descs_length);
+      ptr = (char *) &node->block.efe.ext_attr[0] + U32 (node->block.efe.ext_attr_length);
+      len = U32 (node->block.efe.alloc_descs_length);
       break;
 
     default:
@@ -434,7 +448,7 @@ grub_udf_read_block (grub_fshelp_node_t node, grub_disk_addr_t fileblock)
       return 0;
     }
 
-  if ((U16 (node->fe.icbtag.flags) & GRUB_UDF_ICBTAG_FLAG_AD_MASK)
+  if ((U16 (node->block.fe.icbtag.flags) & GRUB_UDF_ICBTAG_FLAG_AD_MASK)
       == GRUB_UDF_ICBTAG_FLAG_AD_SHORT)
     {
       struct grub_udf_short_ad *ad = (struct grub_udf_short_ad *) ptr;
@@ -545,30 +559,27 @@ grub_udf_read_block (grub_fshelp_node_t node, grub_disk_addr_t fileblock)
     }
 
 fail:
-  if (buf)
-    grub_free (buf);
+  grub_free (buf);
 
   return 0;
 }
 
 static grub_ssize_t
 grub_udf_read_file (grub_fshelp_node_t node,
-		    void NESTED_FUNC_ATTR
-		    (*read_hook) (grub_disk_addr_t sector,
-				  unsigned offset, unsigned length),
+		    grub_disk_read_hook_t read_hook, void *read_hook_data,
 		    grub_off_t pos, grub_size_t len, char *buf)
 {
-  switch (U16 (node->fe.icbtag.flags) & GRUB_UDF_ICBTAG_FLAG_AD_MASK)
+  switch (U16 (node->block.fe.icbtag.flags) & GRUB_UDF_ICBTAG_FLAG_AD_MASK)
     {
     case GRUB_UDF_ICBTAG_FLAG_AD_IN_ICB:
       {
 	char *ptr;
 
-	ptr = ((U16 (node->fe.tag.tag_ident) == GRUB_UDF_TAG_IDENT_FE) ?
-	       ((char *) &node->fe.ext_attr[0]
-                + U32 (node->fe.ext_attr_length)) :
-	       ((char *) &node->efe.ext_attr[0]
-                + U32 (node->efe.ext_attr_length)));
+	ptr = ((U16 (node->block.fe.tag.tag_ident) == GRUB_UDF_TAG_IDENT_FE) ?
+	       ((char *) &node->block.fe.ext_attr[0]
+                + U32 (node->block.fe.ext_attr_length)) :
+	       ((char *) &node->block.efe.ext_attr[0]
+                + U32 (node->block.efe.ext_attr_length)));
 
 	grub_memcpy (buf, ptr + pos, len);
 
@@ -580,10 +591,11 @@ grub_udf_read_file (grub_fshelp_node_t node,
       return 0;
     }
 
-  return  grub_fshelp_read_file (node->data->disk, node, read_hook,
-				 pos, len, buf, grub_udf_read_block,
-				 U64 (node->fe.file_size),
-				 node->data->lbshift);
+  return grub_fshelp_read_file (node->data->disk, node,
+				read_hook, read_hook_data,
+				pos, len, buf, grub_udf_read_block,
+				U64 (node->block.fe.file_size),
+				node->data->lbshift, 0);
 }
 
 static unsigned sblocklist[] = { 256, 512, 0 };
@@ -790,12 +802,32 @@ fail:
   return 0;
 }
 
+#ifdef GRUB_UTIL
+grub_disk_addr_t
+grub_udf_get_cluster_sector (grub_disk_t disk, grub_uint64_t *sec_per_lcn)
+{
+  grub_disk_addr_t ret;
+  static struct grub_udf_data *data;
+
+  data = grub_udf_mount (disk);
+  if (!data)
+    return 0;
+
+  ret = U32 (data->pds[data->pms[0]->type1.part_num].start);
+  *sec_per_lcn = 1ULL << data->lbshift;
+  grub_free (data);
+  return ret;
+}
+#endif
+
 static char *
-read_string (grub_uint8_t *raw, grub_size_t sz)
+read_string (const grub_uint8_t *raw, grub_size_t sz, char *outbuf)
 {
   grub_uint16_t *utf16 = NULL;
-  char *ret;
   grub_size_t utf16len = 0;
+
+  if (sz == 0)
+    return NULL;
 
   if (raw[0] != 8 && raw[0] != 16)
     return NULL;
@@ -820,38 +852,35 @@ read_string (grub_uint8_t *raw, grub_size_t sz)
       for (i = 0; i < utf16len; i++)
 	utf16[i] = (raw[2 * i + 1] << 8) | raw[2*i + 2];
     }
-  ret = grub_malloc (utf16len * 3 + 1);
-  if (ret)
-    *grub_utf16_to_utf8 ((grub_uint8_t *) ret, utf16, utf16len) = '\0';
+  if (!outbuf)
+    outbuf = grub_malloc (utf16len * GRUB_MAX_UTF8_PER_UTF16 + 1);
+  if (outbuf)
+    *grub_utf16_to_utf8 ((grub_uint8_t *) outbuf, utf16, utf16len) = '\0';
   grub_free (utf16);
-  return ret;
+  return outbuf;
 }
 
 static int
 grub_udf_iterate_dir (grub_fshelp_node_t dir,
-		      int NESTED_FUNC_ATTR
-		      (*hook) (const char *filename,
-			       enum grub_fshelp_filetype filetype,
-			       grub_fshelp_node_t node))
+		      grub_fshelp_iterate_dir_hook_t hook, void *hook_data)
 {
   grub_fshelp_node_t child;
   struct grub_udf_file_ident dirent;
   grub_off_t offset = 0;
 
-  child = grub_malloc (sizeof (struct grub_fshelp_node));
+  child = grub_malloc (get_fshelp_size (dir->data));
   if (!child)
     return 0;
 
   /* The current directory is not stored.  */
-  grub_memcpy ((char *) child, (char *) dir,
-	       sizeof (struct grub_fshelp_node));
+  grub_memcpy (child, dir, get_fshelp_size (dir->data));
 
-  if (hook (".", GRUB_FSHELP_DIR, child))
+  if (hook (".", GRUB_FSHELP_DIR, child, hook_data))
     return 1;
 
-  while (offset < U64 (dir->fe.file_size))
+  while (offset < U64 (dir->block.fe.file_size))
     {
-      if (grub_udf_read_file (dir, 0, offset, sizeof (dirent),
+      if (grub_udf_read_file (dir, 0, 0, offset, sizeof (dirent),
 			      (char *) &dirent) != sizeof (dirent))
 	return 0;
 
@@ -864,7 +893,7 @@ grub_udf_iterate_dir (grub_fshelp_node_t dir,
       offset += sizeof (dirent) + U16 (dirent.imp_use_length);
       if (!(dirent.characteristics & GRUB_UDF_FID_CHAR_DELETED))
 	{
-	  child = grub_malloc (sizeof (struct grub_fshelp_node));
+	  child = grub_malloc (get_fshelp_size (dir->data));
 	  if (!child)
 	    return 0;
 
@@ -874,29 +903,31 @@ grub_udf_iterate_dir (grub_fshelp_node_t dir,
           if (dirent.characteristics & GRUB_UDF_FID_CHAR_PARENT)
 	    {
 	      /* This is the parent directory.  */
-	      if (hook ("..", GRUB_FSHELP_DIR, child))
+	      if (hook ("..", GRUB_FSHELP_DIR, child, hook_data))
 	        return 1;
 	    }
           else
 	    {
 	      enum grub_fshelp_filetype type;
 	      char *filename;
-	      grub_uint8_t raw[dirent.file_ident_length];
+	      grub_uint8_t raw[MAX_FILE_IDENT_LENGTH];
 
 	      type = ((dirent.characteristics & GRUB_UDF_FID_CHAR_DIRECTORY) ?
 		      (GRUB_FSHELP_DIR) : (GRUB_FSHELP_REG));
+	      if (child->block.fe.icbtag.file_type == GRUB_UDF_ICBTAG_TYPE_SYMLINK)
+		type = GRUB_FSHELP_SYMLINK;
 
-	      if ((grub_udf_read_file (dir, 0, offset,
+	      if ((grub_udf_read_file (dir, 0, 0, offset,
 				       dirent.file_ident_length,
 				       (char *) raw))
 		  != dirent.file_ident_length)
 		return 0;
 
-	      filename = read_string (raw, dirent.file_ident_length);
+	      filename = read_string (raw, dirent.file_ident_length, 0);
 	      if (!filename)
 		grub_print_error ();
 
-	      if (filename && hook (filename, type, child))
+	      if (filename && hook (filename, type, child, hook_data))
 		{
 		  grub_free (filename);
 		  return 1;
@@ -912,29 +943,148 @@ grub_udf_iterate_dir (grub_fshelp_node_t dir,
   return 0;
 }
 
+static char *
+grub_udf_read_symlink (grub_fshelp_node_t node)
+{
+  grub_size_t sz = U64 (node->block.fe.file_size);
+  grub_uint8_t *raw;
+  const grub_uint8_t *ptr;
+  char *out, *optr;
+
+  if (sz < 4)
+    return NULL;
+  raw = grub_malloc (sz);
+  if (!raw)
+    return NULL;
+  if (grub_udf_read_file (node, NULL, NULL, 0, sz, (char *) raw) < 0)
+    {
+      grub_free (raw);
+      return NULL;
+    }
+
+  out = grub_malloc (sz * 2 + 1);
+  if (!out)
+    {
+      grub_free (raw);
+      return NULL;
+    }
+
+  optr = out;
+
+  for (ptr = raw; ptr < raw + sz; )
+    {
+      grub_size_t s;
+      if ((grub_size_t) (ptr - raw + 4) > sz)
+	goto fail;
+      if (!(ptr[2] == 0 && ptr[3] == 0))
+	goto fail;
+      s = 4 + ptr[1];
+      if ((grub_size_t) (ptr - raw + s) > sz)
+	goto fail;
+      switch (*ptr)
+	{
+	case 1:
+	  if (ptr[1])
+	    goto fail;
+	case 2:
+	  /* in 4 bytes. out: 1 byte.  */
+	  optr = out;
+	  *optr++ = '/';
+	  break;
+	case 3:
+	  /* in 4 bytes. out: 3 bytes.  */
+	  if (optr != out)
+	    *optr++ = '/';
+	  *optr++ = '.';
+	  *optr++ = '.';
+	  break;
+	case 4:
+	  /* in 4 bytes. out: 2 bytes.  */
+	  if (optr != out)
+	    *optr++ = '/';
+	  *optr++ = '.';
+	  break;
+	case 5:
+	  /* in 4 + n bytes. out, at most: 1 + 2 * n bytes.  */
+	  if (optr != out)
+	    *optr++ = '/';
+	  if (!read_string (ptr + 4, s - 4, optr))
+	    goto fail;
+	  optr += grub_strlen (optr);
+	  break;
+	default:
+	  goto fail;
+	}
+      ptr += s;
+    }
+  *optr = 0;
+  grub_free (raw);
+  return out;
+
+ fail:
+  grub_free (raw);
+  grub_free (out);
+  grub_error (GRUB_ERR_BAD_FS, "invalid symlink");
+  return NULL;
+}
+
+/* Context for grub_udf_dir.  */
+struct grub_udf_dir_ctx
+{
+  grub_fs_dir_hook_t hook;
+  void *hook_data;
+};
+
+/* Helper for grub_udf_dir.  */
+static int
+grub_udf_dir_iter (const char *filename, enum grub_fshelp_filetype filetype,
+		   grub_fshelp_node_t node, void *data)
+{
+  struct grub_udf_dir_ctx *ctx = data;
+  struct grub_dirhook_info info;
+  const struct grub_udf_timestamp *tstamp = NULL;
+
+  grub_memset (&info, 0, sizeof (info));
+  info.dir = ((filetype & GRUB_FSHELP_TYPE_MASK) == GRUB_FSHELP_DIR);
+  if (U16 (node->block.fe.tag.tag_ident) == GRUB_UDF_TAG_IDENT_FE)
+    tstamp = &node->block.fe.modification_time;
+  else if (U16 (node->block.fe.tag.tag_ident) == GRUB_UDF_TAG_IDENT_EFE)
+    tstamp = &node->block.efe.modification_time;
+
+  if (tstamp && (U16 (tstamp->type_and_timezone) & 0xf000) == 0x1000)
+    {
+      grub_int16_t tz;
+      struct grub_datetime datetime;
+
+      datetime.year = U16 (tstamp->year);
+      datetime.month = tstamp->month;
+      datetime.day = tstamp->day;
+      datetime.hour = tstamp->hour;
+      datetime.minute = tstamp->minute;
+      datetime.second = tstamp->second;
+
+      tz = U16 (tstamp->type_and_timezone) & 0xfff;
+      if (tz & 0x800)
+	tz |= 0xf000;
+      if (tz == -2047)
+	tz = 0;
+
+      info.mtimeset = !!grub_datetime2unixtime (&datetime, &info.mtime);
+
+      info.mtime -= 60 * tz;
+    }
+  grub_free (node);
+  return ctx->hook (filename, &info, ctx->hook_data);
+}
+
 static grub_err_t
 grub_udf_dir (grub_device_t device, const char *path,
-	      int (*hook) (const char *filename,
-			   const struct grub_dirhook_info *info))
+	      grub_fs_dir_hook_t hook, void *hook_data)
 {
+  struct grub_udf_dir_ctx ctx = { hook, hook_data };
   struct grub_udf_data *data = 0;
-  struct grub_fshelp_node rootnode;
-  struct grub_fshelp_node *foundnode;
-
-  auto int NESTED_FUNC_ATTR iterate (const char *filename,
-				     enum grub_fshelp_filetype filetype,
-				     grub_fshelp_node_t node);
-
-  int NESTED_FUNC_ATTR iterate (const char *filename,
-				enum grub_fshelp_filetype filetype,
-				grub_fshelp_node_t node)
-  {
-      struct grub_dirhook_info info;
-      grub_memset (&info, 0, sizeof (info));
-      info.dir = ((filetype & GRUB_FSHELP_TYPE_MASK) == GRUB_FSHELP_DIR);
-      grub_free (node);
-      return hook (filename, &info);
-  }
+  struct grub_fshelp_node *rootnode = 0;
+  struct grub_fshelp_node *foundnode = 0;
 
   grub_dl_ref (my_mod);
 
@@ -942,20 +1092,27 @@ grub_udf_dir (grub_device_t device, const char *path,
   if (!data)
     goto fail;
 
-  if (grub_udf_read_icb (data, &data->root_icb, &rootnode))
+  rootnode = grub_malloc (get_fshelp_size (data));
+  if (!rootnode)
     goto fail;
 
-  if (grub_fshelp_find_file (path, &rootnode,
+  if (grub_udf_read_icb (data, &data->root_icb, rootnode))
+    goto fail;
+
+  if (grub_fshelp_find_file (path, rootnode,
 			     &foundnode,
-			     grub_udf_iterate_dir, 0, GRUB_FSHELP_DIR))
+			     grub_udf_iterate_dir, grub_udf_read_symlink,
+			     GRUB_FSHELP_DIR))
     goto fail;
 
-  grub_udf_iterate_dir (foundnode, iterate);
+  grub_udf_iterate_dir (foundnode, grub_udf_dir_iter, &ctx);
 
-  if (foundnode != &rootnode)
+  if (foundnode != rootnode)
     grub_free (foundnode);
 
 fail:
+  grub_free (rootnode);
+
   grub_free (data);
 
   grub_dl_unref (my_mod);
@@ -967,7 +1124,7 @@ static grub_err_t
 grub_udf_open (struct grub_file *file, const char *name)
 {
   struct grub_udf_data *data;
-  struct grub_fshelp_node rootnode;
+  struct grub_fshelp_node *rootnode = 0;
   struct grub_fshelp_node *foundnode;
 
   grub_dl_ref (my_mod);
@@ -976,17 +1133,24 @@ grub_udf_open (struct grub_file *file, const char *name)
   if (!data)
     goto fail;
 
-  if (grub_udf_read_icb (data, &data->root_icb, &rootnode))
+  rootnode = grub_malloc (get_fshelp_size (data));
+  if (!rootnode)
     goto fail;
 
-  if (grub_fshelp_find_file (name, &rootnode,
+  if (grub_udf_read_icb (data, &data->root_icb, rootnode))
+    goto fail;
+
+  if (grub_fshelp_find_file (name, rootnode,
 			     &foundnode,
-			     grub_udf_iterate_dir, 0, GRUB_FSHELP_REG))
+			     grub_udf_iterate_dir, grub_udf_read_symlink,
+			     GRUB_FSHELP_REG))
     goto fail;
 
   file->data = foundnode;
   file->offset = 0;
-  file->size = U64 (foundnode->fe.file_size);
+  file->size = U64 (foundnode->block.fe.file_size);
+
+  grub_free (rootnode);
 
   return 0;
 
@@ -994,6 +1158,7 @@ fail:
   grub_dl_unref (my_mod);
 
   grub_free (data);
+  grub_free (rootnode);
 
   return grub_errno;
 }
@@ -1003,7 +1168,8 @@ grub_udf_read (grub_file_t file, char *buf, grub_size_t len)
 {
   struct grub_fshelp_node *node = (struct grub_fshelp_node *) file->data;
 
-  return grub_udf_read_file (node, file->read_hook, file->offset, len, buf);
+  return grub_udf_read_file (node, file->read_hook, file->read_hook_data,
+			     file->offset, len, buf);
 }
 
 static grub_err_t
@@ -1030,7 +1196,7 @@ grub_udf_label (grub_device_t device, char **label)
 
   if (data)
     {
-      *label = read_string (data->lvd.ident, sizeof (data->lvd.ident));
+      *label = read_string (data->lvd.ident, sizeof (data->lvd.ident), 0);
       grub_free (data);
     }
   else
@@ -1046,6 +1212,10 @@ static struct grub_fs grub_udf_fs = {
   .read = grub_udf_read,
   .close = grub_udf_close,
   .label = grub_udf_label,
+#ifdef GRUB_UTIL
+  .reserved_first_sector = 1,
+  .blocklist_install = 1,
+#endif
   .next = 0
 };
 

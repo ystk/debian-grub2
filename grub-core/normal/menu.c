@@ -40,6 +40,22 @@
 grub_err_t (*grub_gfxmenu_try_hook) (int entry, grub_menu_t menu,
 				     int nested) = NULL;
 
+enum timeout_style {
+  TIMEOUT_STYLE_MENU,
+  TIMEOUT_STYLE_COUNTDOWN,
+  TIMEOUT_STYLE_HIDDEN
+};
+
+struct timeout_style_name {
+  const char *name;
+  enum timeout_style style;
+} timeout_style_names[] = {
+  {"menu", TIMEOUT_STYLE_MENU},
+  {"countdown", TIMEOUT_STYLE_COUNTDOWN},
+  {"hidden", TIMEOUT_STYLE_HIDDEN},
+  {NULL, 0}
+};
+
 /* Wait until the user pushes any key so that the user
    can see what happened.  */
 void
@@ -52,12 +68,8 @@ grub_wait_after_message (void)
 
   endtime = grub_get_time_ms () + 10000;
 
-  while (grub_get_time_ms () < endtime)
-    if (grub_checkkey () >= 0)
-      {
-	grub_getkey ();
-	break;
-      }
+  while (grub_get_time_ms () < endtime
+	 && grub_getkey_noblock () == GRUB_TERM_NO_KEY);
 
   grub_xputs ("\n");
 }
@@ -74,12 +86,46 @@ grub_menu_get_entry (grub_menu_t menu, int no)
   return e;
 }
 
+/* Get the index of a menu entry associated with a given hotkey, or -1.  */
+static int
+get_entry_index_by_hotkey (grub_menu_t menu, int hotkey)
+{
+  grub_menu_entry_t entry;
+  int i;
+
+  for (i = 0, entry = menu->entry_list; i < menu->size;
+       i++, entry = entry->next)
+    if (entry->hotkey == hotkey)
+      return i;
+
+  return -1;
+}
+
+/* Return the timeout style.  If the variable "timeout_style" is not set or
+   invalid, default to TIMEOUT_STYLE_MENU.  */
+static enum timeout_style
+get_timeout_style (void)
+{
+  const char *val;
+  struct timeout_style_name *style_name;
+
+  val = grub_env_get ("timeout_style");
+  if (!val)
+    return TIMEOUT_STYLE_MENU;
+
+  for (style_name = timeout_style_names; style_name->name; style_name++)
+    if (grub_strcmp (style_name->name, val) == 0)
+      return style_name->style;
+
+  return TIMEOUT_STYLE_MENU;
+}
+
 /* Return the current timeout. If the variable "timeout" is not set or
    invalid, return -1.  */
 int
 grub_menu_get_timeout (void)
 {
-  char *val;
+  const char *val;
   int timeout;
 
   val = grub_env_get ("timeout");
@@ -124,7 +170,7 @@ grub_menu_set_timeout (int timeout)
 static int
 get_and_remove_first_entry_number (const char *name)
 {
-  char *val;
+  const char *val;
   char *tail;
   int entry;
 
@@ -192,7 +238,7 @@ grub_menu_execute_entry(grub_menu_entry_t entry, int auto_boot)
 	grub_env_set ("timeout", "0");
     }
 
-  for (ptr = entry->title; *ptr; ptr++)
+  for (ptr = entry->id; *ptr; ptr++)
     sz += (*ptr == '>') ? 2 : 1;
   if (chosen)
     {
@@ -221,7 +267,7 @@ grub_menu_execute_entry(grub_menu_entry_t entry, int auto_boot)
 	  optr = grub_stpcpy (optr, chosen);
 	  *optr++ = '>';
 	}
-      for (ptr = entry->title; *ptr; ptr++)
+      for (ptr = entry->id; *ptr; ptr++)
 	{
 	  if (*ptr == '>')
 	    *optr++ = '>';
@@ -232,7 +278,8 @@ grub_menu_execute_entry(grub_menu_entry_t entry, int auto_boot)
       grub_env_export ("chosen");
       grub_free (buf);
     }
-  for (ptr = def; *ptr; ptr++)
+
+  for (ptr = def; ptr && *ptr; ptr++)
     {
       if (ptr[0] == '>' && ptr[1] == '>')
 	{
@@ -242,18 +289,25 @@ grub_menu_execute_entry(grub_menu_entry_t entry, int auto_boot)
       if (ptr[0] == '>')
 	break;
     }
-  if (ptr[0] && ptr[1])
+
+  if (ptr && ptr[0] && ptr[1])
     grub_env_set ("default", ptr + 1);
   else
     grub_env_unset ("default");
-  grub_script_execute_sourcecode (entry->sourcecode, entry->argc, entry->args);
+
+  grub_script_execute_new_scope (entry->sourcecode, entry->argc, entry->args);
 
   if (errs_before != grub_err_printed_errors)
     grub_wait_after_message ();
 
+  errs_before = grub_err_printed_errors;
+
   if (grub_errno == GRUB_ERR_NONE && grub_loader_is_loaded ())
     /* Implicit execution of boot, only if something is loaded.  */
     grub_command_execute ("boot", 0, 0);
+
+  if (errs_before != grub_err_printed_errors)
+    grub_wait_after_message ();
 
   if (entry->submenu)
     {
@@ -350,7 +404,7 @@ menu_init (int entry, grub_menu_t menu, int nested)
   int gfxmenu = 0;
 
   FOR_ACTIVE_TERM_OUTPUTS(term)
-    if (grub_strcmp (term->name, "gfxterm") == 0)
+    if (term->fullscreen)
       {
 	if (grub_env_get ("theme"))
 	  {
@@ -370,12 +424,14 @@ menu_init (int entry, grub_menu_t menu, int nested)
 		  }
 	      }
 	    else
-	      grub_error (GRUB_ERR_BAD_MODULE, "no gfxmenu found");
+	      grub_error (GRUB_ERR_BAD_MODULE,
+			  N_("module `%s' isn't loaded"),
+			  "gfxmenu");
 	    grub_print_error ();
 	    grub_wait_after_message ();
 	  }
 	grub_errno = GRUB_ERR_NONE;
-	grub_gfxterm_fullscreen ();
+	term->fullscreen ();
 	break;
       }
 
@@ -384,7 +440,7 @@ menu_init (int entry, grub_menu_t menu, int nested)
     grub_err_t err;
 
     if (grub_strcmp (term->name, "gfxterm") == 0 && gfxmenu)
-      break;
+      continue;
 
     err = grub_menu_try_text (term, entry, menu, nested);
     if(!err)
@@ -410,10 +466,10 @@ grub_menu_register_viewer (struct grub_menu_viewer *viewer)
 }
 
 static int
-menuentry_eq (const char *title, const char *spec)
+menuentry_eq (const char *id, const char *spec)
 {
   const char *ptr1, *ptr2;
-  ptr1 = title;
+  ptr1 = id;
   ptr2 = spec;
   while (1)
     {
@@ -458,7 +514,8 @@ get_entry_number (grub_menu_t menu, const char *name)
 
       for (i = 0; e; i++)
 	{
-	  if (menuentry_eq (e->title, val))
+	  if (menuentry_eq (e->title, val)
+	      || menuentry_eq (e->id, val))
 	    {
 	      entry = i;
 	      break;
@@ -481,6 +538,33 @@ get_entry_number (grub_menu_t menu, const char *name)
   return entry;
 }
 
+/* Check whether a second has elapsed since the last tick.  If so, adjust
+   the timer and return 1; otherwise, return 0.  */
+static int
+has_second_elapsed (grub_uint64_t *saved_time)
+{
+  grub_uint64_t current_time;
+
+  current_time = grub_get_time_ms ();
+  if (current_time - *saved_time >= 1000)
+    {
+      *saved_time = current_time;
+      return 1;
+    }
+  else
+    return 0;
+}
+
+static void
+print_countdown (struct grub_term_coordinate *pos, int n)
+{
+  grub_term_restore_pos (pos);
+  /* NOTE: Do not remove the trailing space characters.
+     They are required to clear the line.  */
+  grub_printf ("%d    ", n);
+  grub_refresh ();
+}
+
 #define GRUB_MENU_PAGE_SIZE 10
 
 /* Show the menu and handle menu entry selection.  Returns the menu entry
@@ -495,6 +579,7 @@ run_menu (grub_menu_t menu, int nested, int *auto_boot)
   grub_uint64_t saved_time;
   int default_entry, current_entry;
   int timeout;
+  enum timeout_style timeout_style;
 
   default_entry = get_entry_number (menu, "default");
 
@@ -503,8 +588,71 @@ run_menu (grub_menu_t menu, int nested, int *auto_boot)
   if (default_entry < 0 || default_entry >= menu->size)
     default_entry = 0;
 
+  timeout = grub_menu_get_timeout ();
+  if (timeout < 0)
+    /* If there is no timeout, the "countdown" and "hidden" styles result in
+       the system doing nothing and providing no or very little indication
+       why.  Technically this is what the user asked for, but it's not very
+       useful and likely to be a source of confusion, so we disallow this.  */
+    grub_env_unset ("timeout_style");
+
+  timeout_style = get_timeout_style ();
+
+  if (timeout_style == TIMEOUT_STYLE_COUNTDOWN
+      || timeout_style == TIMEOUT_STYLE_HIDDEN)
+    {
+      static struct grub_term_coordinate *pos;
+      int entry = -1;
+
+      if (timeout_style == TIMEOUT_STYLE_COUNTDOWN && timeout)
+	{
+	  pos = grub_term_save_pos ();
+	  print_countdown (pos, timeout);
+	}
+
+      /* Enter interruptible sleep until Escape or a menu hotkey is pressed,
+         or the timeout expires.  */
+      saved_time = grub_get_time_ms ();
+      while (1)
+	{
+	  int key;
+
+	  key = grub_getkey_noblock ();
+	  if (key != GRUB_TERM_NO_KEY)
+	    {
+	      entry = get_entry_index_by_hotkey (menu, key);
+	      if (entry >= 0)
+		break;
+	    }
+	  if (key == GRUB_TERM_ESC)
+	    {
+	      timeout = -1;
+	      break;
+	    }
+
+	  if (timeout > 0 && has_second_elapsed (&saved_time))
+	    {
+	      timeout--;
+	      if (timeout_style == TIMEOUT_STYLE_COUNTDOWN)
+		print_countdown (pos, timeout);
+	    }
+
+	  if (timeout == 0)
+	    /* We will fall through to auto-booting the default entry.  */
+	    break;
+	}
+
+      grub_env_unset ("timeout");
+      grub_env_unset ("timeout_style");
+      if (entry >= 0)
+	{
+	  *auto_boot = 0;
+	  return entry;
+	}
+    }
+
   /* If timeout is 0, drawing is pointless (and ugly).  */
-  if (grub_menu_get_timeout () == 0)
+  if (timeout == 0)
     {
       *auto_boot = 1;
       return default_entry;
@@ -512,11 +660,11 @@ run_menu (grub_menu_t menu, int nested, int *auto_boot)
 
   current_entry = default_entry;
 
-  /* Initialize the time.  */
-  saved_time = grub_get_time_ms ();
-
  refresh:
   menu_init (current_entry, menu, nested);
+
+  /* Initialize the time.  */
+  saved_time = grub_get_time_ms ();
 
   timeout = grub_menu_get_timeout ();
 
@@ -533,18 +681,11 @@ run_menu (grub_menu_t menu, int nested, int *auto_boot)
       if (grub_normal_exit_level)
 	return -1;
 
-      if (timeout > 0)
+      if (timeout > 0 && has_second_elapsed (&saved_time))
 	{
-	  grub_uint64_t current_time;
-
-	  current_time = grub_get_time_ms ();
-	  if (current_time - saved_time >= 1000)
-	    {
-	      timeout--;
-	      grub_menu_set_timeout (timeout);
-	      saved_time = current_time;
-	      menu_print_timeout (timeout);
-	    }
+	  timeout--;
+	  grub_menu_set_timeout (timeout);
+	  menu_print_timeout (timeout);
 	}
 
       if (timeout == 0)
@@ -555,10 +696,10 @@ run_menu (grub_menu_t menu, int nested, int *auto_boot)
 	  return default_entry;
 	}
 
-      if (grub_checkkey () >= 0 || timeout < 0)
-	{
-	  c = grub_getkey ();
+      c = grub_getkey_noblock ();
 
+      if (c != GRUB_TERM_NO_KEY)
+	{
 	  if (timeout >= 0)
 	    {
 	      grub_env_unset ("timeout");
@@ -646,16 +787,15 @@ run_menu (grub_menu_t menu, int nested, int *auto_boot)
 
 	    default:
 	      {
-		grub_menu_entry_t entry;
-		int i;
-		for (i = 0, entry = menu->entry_list; i < menu->size;
-		     i++, entry = entry->next)
-		  if (entry->hotkey == c)
-		    {
-		      menu_fini ();
-		      *auto_boot = 0;
-		      return i;
-		    }
+		int entry;
+
+		entry = get_entry_index_by_hotkey (menu, c);
+		if (entry >= 0)
+		  {
+		    menu_fini ();
+		    *auto_boot = 0;
+		    return entry;
+		  }
 	      }
 	      break;
 	    }
@@ -663,7 +803,6 @@ run_menu (grub_menu_t menu, int nested, int *auto_boot)
     }
 
   /* Never reach here.  */
-  return -1;
 }
 
 /* Callback invoked immediately before a menu entry is executed.  */
@@ -672,7 +811,7 @@ notify_booting (grub_menu_entry_t entry,
 		void *userdata __attribute__((unused)))
 {
   grub_printf ("  ");
-  grub_printf_ (N_("Booting \'%s\'"), entry->title);
+  grub_printf_ (N_("Booting `%s'"), entry->title);
   grub_printf ("\n\n");
 }
 
@@ -684,7 +823,7 @@ notify_fallback (grub_menu_entry_t entry,
 		 void *userdata __attribute__((unused)))
 {
   grub_printf ("\n   ");
-  grub_printf_ (N_("Falling back to \'%s\'"), entry->title);
+  grub_printf_ (N_("Falling back to `%s'"), entry->title);
   grub_printf ("\n\n");
   grub_millisleep (DEFAULT_ENTRY_ERROR_DELAY_MS);
 }

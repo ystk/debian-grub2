@@ -25,6 +25,7 @@
 #include <grub/err.h>
 #include <grub/types.h>
 #include <grub/elf.h>
+#include <grub/list.h>
 #endif
 
 /*
@@ -35,6 +36,37 @@
 #ifndef ASM_FILE
 
 #ifndef GRUB_MOD_INIT
+
+#if !defined (GRUB_UTIL) && !defined (GRUB_MACHINE_EMU) && !defined (GRUB_KERNEL)
+
+#define GRUB_MOD_INIT(name)	\
+static void grub_mod_init (grub_dl_t mod __attribute__ ((unused))) __attribute__ ((used)); \
+static void \
+grub_mod_init (grub_dl_t mod __attribute__ ((unused)))
+
+#define GRUB_MOD_FINI(name)	\
+static void grub_mod_fini (void) __attribute__ ((used)); \
+static void \
+grub_mod_fini (void)
+
+#elif defined (GRUB_KERNEL)
+
+#define GRUB_MOD_INIT(name)	\
+static void grub_mod_init (grub_dl_t mod __attribute__ ((unused))) __attribute__ ((used)); \
+void \
+grub_##name##_init (void) { grub_mod_init (0); } \
+static void \
+grub_mod_init (grub_dl_t mod __attribute__ ((unused)))
+
+#define GRUB_MOD_FINI(name)	\
+static void grub_mod_fini (void) __attribute__ ((used)); \
+void \
+grub_##name##_fini (void) { grub_mod_fini (); } \
+static void \
+grub_mod_fini (void)
+
+#else
+
 #define GRUB_MOD_INIT(name)	\
 static void grub_mod_init (grub_dl_t mod __attribute__ ((unused))) __attribute__ ((used)); \
 void grub_##name##_init (void); \
@@ -42,9 +74,7 @@ void \
 grub_##name##_init (void) { grub_mod_init (0); } \
 static void \
 grub_mod_init (grub_dl_t mod __attribute__ ((unused)))
-#endif
 
-#ifndef GRUB_MOD_FINI
 #define GRUB_MOD_FINI(name)	\
 static void grub_mod_fini (void) __attribute__ ((used)); \
 void grub_##name##_fini (void); \
@@ -52,33 +82,21 @@ void \
 grub_##name##_fini (void) { grub_mod_fini (); } \
 static void \
 grub_mod_fini (void)
+
 #endif
-
-#ifdef APPLE_CC
-#define GRUB_MOD_NAME(name)	\
-static char grub_modname[] __attribute__ ((section ("_modname, _modname"), used)) = #name;
-
-#define GRUB_MOD_DEP(name)	\
-__asm__ (".section _moddeps, _moddeps\n.asciz \"" #name "\"\n")
-#else
-#define GRUB_MOD_NAME(name)	\
-__asm__ (".section .modname\n.asciz \"" #name "\"\n")
-
-#define GRUB_MOD_DEP(name)	\
-__asm__ (".section .moddeps\n.asciz \"" #name "\"\n")
 
 #endif
 
 #endif
 
 #ifndef ASM_FILE
-#ifdef APPLE_CC
+#ifdef __APPLE__
 #define GRUB_MOD_SECTION(x) "_" #x ", _" #x ""
 #else
 #define GRUB_MOD_SECTION(x) "." #x
 #endif
 #else
-#ifdef APPLE_CC
+#ifdef __APPLE__
 #define GRUB_MOD_SECTION(x) _ ## x , _ ##x 
 #else
 #define GRUB_MOD_SECTION(x) . ## x
@@ -94,14 +112,35 @@ __asm__ (".section .moddeps\n.asciz \"" #name "\"\n")
    Be sure to understand your license obligations.
 */
 #ifndef ASM_FILE
-#define GRUB_MOD_LICENSE(license)	\
-  static char grub_module_license[] __attribute__ ((section (GRUB_MOD_SECTION (module_license)), used)) = "LICENSE=" license;
+#if GNUC_PREREQ (3,2)
+#define ATTRIBUTE_USED __used__
 #else
+#define ATTRIBUTE_USED __unused__
+#endif
 #define GRUB_MOD_LICENSE(license)	\
-  .section GRUB_MOD_SECTION(module_license), "a";	\
-  .ascii "LICENSE="; \
-  .ascii license; \
+  static char grub_module_license[] __attribute__ ((section (GRUB_MOD_SECTION (module_license)), ATTRIBUTE_USED)) = "LICENSE=" license;
+#define GRUB_MOD_DEP(name)	\
+static const char grub_module_depend_##name[] \
+ __attribute__((section(GRUB_MOD_SECTION(moddeps)), ATTRIBUTE_USED)) = #name
+#define GRUB_MOD_NAME(name)	\
+static const char grub_module_name_##name[] \
+ __attribute__((section(GRUB_MOD_SECTION(modname)), __used__)) = #name
+#else
+#ifdef __APPLE__
+.macro GRUB_MOD_LICENSE
+  .section GRUB_MOD_SECTION(module_license)
+  .ascii "LICENSE="
+  .ascii $0
   .byte 0
+.endm
+#else
+.macro GRUB_MOD_LICENSE license
+  .section GRUB_MOD_SECTION(module_license), "a"
+  .ascii "LICENSE="
+  .ascii "\license"
+  .byte 0
+.endm
+#endif
 #endif
 
 /* Under GPL license obligations you have to distribute your module
@@ -130,6 +169,7 @@ struct grub_dl_dep
 };
 typedef struct grub_dl_dep *grub_dl_dep_t;
 
+#ifndef GRUB_UTIL
 struct grub_dl
 {
   char *name;
@@ -137,33 +177,110 @@ struct grub_dl
   grub_dl_dep_t dep;
   grub_dl_segment_t segment;
   Elf_Sym *symtab;
+  grub_size_t symsize;
   void (*init) (struct grub_dl *mod);
   void (*fini) (void);
+#if !defined (__i386__) && !defined (__x86_64__)
+  void *got;
+  void *gotptr;
+  void *tramp;
+  void *trampptr;
+#endif
+#ifdef __mips__
+  grub_uint32_t *reginfo;
+#endif
+  void *base;
+  grub_size_t sz;
   struct grub_dl *next;
 };
+#endif
 typedef struct grub_dl *grub_dl_t;
 
-grub_dl_t EXPORT_FUNC(grub_dl_load_file) (const char *filename);
+grub_dl_t grub_dl_load_file (const char *filename);
 grub_dl_t EXPORT_FUNC(grub_dl_load) (const char *name);
 grub_dl_t grub_dl_load_core (void *addr, grub_size_t size);
+grub_dl_t EXPORT_FUNC(grub_dl_load_core_noinit) (void *addr, grub_size_t size);
 int EXPORT_FUNC(grub_dl_unload) (grub_dl_t mod);
 void grub_dl_unload_unneeded (void);
 int EXPORT_FUNC(grub_dl_ref) (grub_dl_t mod);
 int EXPORT_FUNC(grub_dl_unref) (grub_dl_t mod);
 extern grub_dl_t EXPORT_VAR(grub_dl_head);
 
+#ifndef GRUB_UTIL
+
 #define FOR_DL_MODULES(var) FOR_LIST_ELEMENTS ((var), (grub_dl_head))
 
-grub_dl_t EXPORT_FUNC(grub_dl_get) (const char *name);
+#ifdef GRUB_MACHINE_EMU
+void *
+grub_osdep_dl_memalign (grub_size_t align, grub_size_t size);
+void
+grub_dl_osdep_dl_free (void *ptr);
+#endif
+
+static inline void
+grub_dl_init (grub_dl_t mod)
+{
+  if (mod->init)
+    (mod->init) (mod);
+
+  mod->next = grub_dl_head;
+  grub_dl_head = mod;
+}
+
+static inline grub_dl_t
+grub_dl_get (const char *name)
+{
+  grub_dl_t l;
+
+  FOR_DL_MODULES(l)
+    if (grub_strcmp (name, l->name) == 0)
+      return l;
+
+  return 0;
+}
+
+#endif
+
 grub_err_t grub_dl_register_symbol (const char *name, void *addr,
-				    grub_dl_t mod);
+				    int isfunc, grub_dl_t mod);
 
 grub_err_t grub_arch_dl_check_header (void *ehdr);
-grub_err_t grub_arch_dl_relocate_symbols (grub_dl_t mod, void *ehdr);
+#ifndef GRUB_UTIL
+grub_err_t
+grub_arch_dl_relocate_symbols (grub_dl_t mod, void *ehdr,
+			       Elf_Shdr *s, grub_dl_segment_t seg);
+#endif
 
 #if defined (_mips)
 #define GRUB_LINKER_HAVE_INIT 1
 void grub_arch_dl_init_linker (void);
+#endif
+
+#define GRUB_IA64_DL_TRAMP_ALIGN 16
+#define GRUB_IA64_DL_GOT_ALIGN 16
+
+grub_err_t
+grub_ia64_dl_get_tramp_got_size (const void *ehdr, grub_size_t *tramp,
+				 grub_size_t *got);
+
+#if defined (__ia64__)
+#define GRUB_ARCH_DL_TRAMP_ALIGN GRUB_IA64_DL_TRAMP_ALIGN
+#define GRUB_ARCH_DL_GOT_ALIGN GRUB_IA64_DL_GOT_ALIGN
+#define grub_arch_dl_get_tramp_got_size grub_ia64_dl_get_tramp_got_size
+#else
+grub_err_t
+grub_arch_dl_get_tramp_got_size (const void *ehdr, grub_size_t *tramp,
+				 grub_size_t *got);
+#endif
+
+#if defined (__powerpc__) || defined (__mips__) || defined (__arm__)
+#define GRUB_ARCH_DL_TRAMP_ALIGN 4
+#define GRUB_ARCH_DL_GOT_ALIGN 4
+#endif
+
+#if defined (__aarch64__) || defined (__sparc__)
+#define GRUB_ARCH_DL_TRAMP_ALIGN 8
+#define GRUB_ARCH_DL_GOT_ALIGN 8
 #endif
 
 #endif

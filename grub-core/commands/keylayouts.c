@@ -132,6 +132,9 @@ map_key_core (int code, int status, int *alt_gr_consumed)
 {
   *alt_gr_consumed = 0;
 
+  if (code >= GRUB_KEYBOARD_LAYOUTS_ARRAY_SIZE)
+    return 0;
+
   if (status & GRUB_TERM_STATUS_RALT)
     {
       if (status & (GRUB_TERM_STATUS_LSHIFT | GRUB_TERM_STATUS_RSHIFT))
@@ -207,7 +210,7 @@ grub_cmd_keymap (struct grub_command *cmd __attribute__ ((unused)),
     {
       const char *prefix = grub_env_get ("prefix");
       if (!prefix)
-	return grub_error (GRUB_ERR_BAD_ARGUMENT, "No prefix set");	
+	return grub_error (GRUB_ERR_BAD_ARGUMENT, N_("variable `%s' isn't set"), "prefix");	
       filename = grub_xasprintf ("%s/layouts/%s.gkb", prefix, argv[0]);
       if (!filename)
 	return grub_errno;
@@ -222,7 +225,8 @@ grub_cmd_keymap (struct grub_command *cmd __attribute__ ((unused)),
   if (grub_file_read (file, magic, sizeof (magic)) != sizeof (magic))
     {
       if (!grub_errno)
-	grub_error (GRUB_ERR_BAD_ARGUMENT, "file is too short");
+	grub_error (GRUB_ERR_BAD_ARGUMENT, N_("premature end of file %s"),
+		    filename);
       goto fail;
     }
 
@@ -236,11 +240,12 @@ grub_cmd_keymap (struct grub_command *cmd __attribute__ ((unused)),
   if (grub_file_read (file, &version, sizeof (version)) != sizeof (version))
     {
       if (!grub_errno)
-	grub_error (GRUB_ERR_BAD_ARGUMENT, "file is too short");
+	grub_error (GRUB_ERR_BAD_ARGUMENT, N_("premature end of file %s"),
+		    filename);
       goto fail;
     }
 
-  if (grub_le_to_cpu32 (version) != GRUB_KEYBOARD_LAYOUTS_VERSION)
+  if (version != grub_cpu_to_le32_compile_time (GRUB_KEYBOARD_LAYOUTS_VERSION))
     {
       grub_error (GRUB_ERR_BAD_ARGUMENT, "invalid version");
       goto fail;
@@ -253,7 +258,8 @@ grub_cmd_keymap (struct grub_command *cmd __attribute__ ((unused)),
   if (grub_file_read (file, newmap, sizeof (*newmap)) != sizeof (*newmap))
     {
       if (!grub_errno)
-	grub_error (GRUB_ERR_BAD_ARGUMENT, "file is too short");
+	grub_error (GRUB_ERR_BAD_ARGUMENT, N_("premature end of file %s"),
+		    filename);
       goto fail;
     }
 

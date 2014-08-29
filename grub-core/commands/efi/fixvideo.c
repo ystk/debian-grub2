@@ -23,6 +23,7 @@
 #include <grub/pci.h>
 #include <grub/command.h>
 #include <grub/i18n.h>
+#include <grub/mm.h>
 
 GRUB_MOD_LICENSE ("GPLv3+");
 
@@ -40,8 +41,9 @@ static struct grub_video_patch
     {0, 0, 0, 0, 0}
   };
 
-static int NESTED_FUNC_ATTR
-scan_card (grub_pci_device_t dev, grub_pci_id_t pciid)
+static int
+scan_card (grub_pci_device_t dev, grub_pci_id_t pciid,
+	   void *data __attribute__ ((unused)))
 {
   grub_pci_address_t addr;
 
@@ -54,26 +56,26 @@ scan_card (grub_pci_device_t dev, grub_pci_id_t pciid)
 	{
 	  if (p->pci_id == pciid)
 	    {
-	      grub_target_addr_t base;
+	      grub_addr_t base;
 
-	      grub_printf ("Found graphic card: %s\n", p->name);
+	      grub_dprintf ("fixvideo", "Found graphic card: %s\n", p->name);
 	      addr += 8 + p->mmio_bar * 4;
 	      base = grub_pci_read (addr);
 	      if ((! base) || (base & GRUB_PCI_ADDR_SPACE_IO) ||
 		  (base & GRUB_PCI_ADDR_MEM_PREFETCH))
-		grub_printf ("Invalid MMIO bar %d\n", p->mmio_bar);
+		grub_dprintf ("fixvideo", "Invalid MMIO bar %d\n", p->mmio_bar);
 	      else
 		{
 		  base &= GRUB_PCI_ADDR_MEM_MASK;
 		  base += p->mmio_reg;
 
 		  if (*((volatile grub_uint32_t *) base) != p->mmio_old)
-		    grub_printf ("Old value don't match\n");
+		    grub_dprintf ("fixvideo", "Old value doesn't match\n");
 		  else
 		    {
 		      *((volatile grub_uint32_t *) base) = 0;
 		      if (*((volatile grub_uint32_t *) base))
-			grub_printf ("Set MMIO fails\n");
+			grub_dprintf ("fixvideo", "Setting MMIO fails\n");
 		    }
 		}
 
@@ -82,7 +84,7 @@ scan_card (grub_pci_device_t dev, grub_pci_id_t pciid)
 	  p++;
 	}
 
-      grub_printf ("Unknown graphic card: %x\n", pciid);
+      grub_dprintf ("fixvideo", "Unknown graphic card: %x\n", pciid);
     }
 
   return 0;
@@ -93,7 +95,7 @@ grub_cmd_fixvideo (grub_command_t cmd __attribute__ ((unused)),
 		   int argc __attribute__ ((unused)),
 		   char *argv[] __attribute__ ((unused)))
 {
-  grub_pci_iterate (scan_card);
+  grub_pci_iterate (scan_card, NULL);
   return 0;
 }
 

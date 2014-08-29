@@ -53,6 +53,7 @@ typedef enum
 {
   GRUB_SCRIPT_ARG_TYPE_VAR,
   GRUB_SCRIPT_ARG_TYPE_TEXT,
+  GRUB_SCRIPT_ARG_TYPE_GETTEXT,
   GRUB_SCRIPT_ARG_TYPE_DQVAR,
   GRUB_SCRIPT_ARG_TYPE_DQSTR,
   GRUB_SCRIPT_ARG_TYPE_SQSTR,
@@ -84,8 +85,6 @@ struct grub_script_argv
 /* Pluggable wildcard translator.  */
 struct grub_script_wildcard_translator
 {
-  char *(*escape) (const char *str);
-  char *(*unescape) (const char *str);
   grub_err_t (*expand) (const char *str, char ***expansions);
 };
 extern struct grub_script_wildcard_translator *grub_wildcard_translator;
@@ -161,6 +160,9 @@ struct grub_lexer_param
   /* Function used by the lexer to get a new line when more input is
      expected, but not available.  */
   grub_reader_getline_t getline;
+
+  /* Caller-supplied data passed to `getline'.  */
+  void *getline_data;
 
   /* A reference counter.  If this is >0 it means that the parser
      expects more tokens and `getline' should be called to fetch more.
@@ -245,8 +247,9 @@ void grub_script_mem_free (struct grub_script_mem *mem);
 void grub_script_argv_free    (struct grub_script_argv *argv);
 int grub_script_argv_make     (struct grub_script_argv *argv, int argc, char **args);
 int grub_script_argv_next     (struct grub_script_argv *argv);
-int grub_script_argv_append   (struct grub_script_argv *argv, const char *s);
-int grub_script_argv_split_append (struct grub_script_argv *argv, char *s);
+int grub_script_argv_append   (struct grub_script_argv *argv, const char *s,
+			       grub_size_t slen);
+int grub_script_argv_split_append (struct grub_script_argv *argv, const char *s);
 
 struct grub_script_arglist *
 grub_script_create_arglist (struct grub_parser_param *state);
@@ -287,14 +290,16 @@ grub_script_arg_add (struct grub_parser_param *state,
 		     grub_script_arg_type_t type, char *str);
 
 struct grub_script *grub_script_parse (char *script,
-				       grub_reader_getline_t getline);
+				       grub_reader_getline_t getline_func,
+				       void *getline_func_data);
 void grub_script_free (struct grub_script *script);
 struct grub_script *grub_script_create (struct grub_script_cmd *cmd,
 					struct grub_script_mem *mem);
 
 struct grub_lexer_param *grub_script_lexer_init (struct grub_parser_param *parser,
 						 char *script,
-						 grub_reader_getline_t getline);
+						 grub_reader_getline_t getline_func,
+						 void *getline_func_data);
 void grub_script_lexer_fini (struct grub_lexer_param *);
 void grub_script_lexer_ref (struct grub_lexer_param *);
 void grub_script_lexer_deref (struct grub_lexer_param *);
@@ -324,7 +329,8 @@ grub_err_t grub_script_execute_cmdwhile (struct grub_script_cmd *cmd);
 
 /* Execute any GRUB pre-parsed command or script.  */
 grub_err_t grub_script_execute (struct grub_script *script);
-grub_err_t grub_script_execute_sourcecode (const char *source, int argc, char **args);
+grub_err_t grub_script_execute_sourcecode (const char *source);
+grub_err_t grub_script_execute_new_scope (const char *source, int argc, char **args);
 
 /* Break command for loops.  */
 grub_err_t grub_script_break (grub_command_t cmd, int argc, char *argv[]);
@@ -380,7 +386,9 @@ char **
 grub_script_execute_arglist_to_argv (struct grub_script_arglist *arglist, int *count);
 
 grub_err_t
-grub_normal_parse_line (char *line, grub_reader_getline_t getline);
+grub_normal_parse_line (char *line,
+			grub_reader_getline_t getline_func,
+			void *getline_func_data);
 
 static inline struct grub_script *
 grub_script_ref (struct grub_script *script)
