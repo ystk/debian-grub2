@@ -31,11 +31,16 @@ endif
 CC := gcc-4.9
 
 confflags = PACKAGE_VERSION="$(deb_version)" PACKAGE_STRING="GRUB $(deb_version)" CC=$(CC) TARGET_CC=$(CC) --enable-grub-mkfont
+substvars =
 
 AUTOGEN_DEB_FILES = config templates preinst postinst postrm dirs install links maintscript
 
 BUILD_PACKAGES := $(strip $(shell dh_listpackages))
-REAL_PACKAGES = grub-emu grub-pc grub-coreboot grub-efi-ia32 grub-efi-amd64 grub-efi-ia64 grub-efi-arm grub-efi-arm64 grub-ieee1275 grub-firmware-qemu grub-uboot grub-xen grub-yeeloong
+# REAL_PACKAGES build an actual grub variant (and therefore have both configure
+# and build stages). EXTRA_PACKAGES do not build grub but may depend on a
+# REAL_PACKAGE (and therefore only have a build stage)
+REAL_PACKAGES = grub-common grub-emu grub-pc grub-coreboot grub-efi-ia32 grub-efi-amd64 grub-efi-ia64 grub-efi-arm grub-efi-arm64 grub-ieee1275 grub-firmware-qemu grub-uboot grub-xen grub-yeeloong
+EXTRA_PACKAGES = grub-rescue-pc grub-xen-host
 
 ifneq (,$(filter i386 amd64,$(DEB_HOST_ARCH_CPU)))
 COMMON_PLATFORM := pc
@@ -50,26 +55,30 @@ COMMON_PLATFORM := uboot
 else ifeq (arm64,$(DEB_HOST_ARCH_CPU))
 COMMON_PLATFORM := efi-arm64
 else
-$(error COMMON_PLATFORM not set for $(DEB_HOST_ARCH_CPU))
+COMMON_PLATFORM := none
+BUILD_PACKAGES += grub-none
 endif
 
 ifeq (yes,$(shell dpkg-vendor --derives-from Ubuntu && echo yes))
 DEFAULT_CMDLINE := quiet splash
 DEFAULT_TIMEOUT := 10
-DEFAULT_HIDDEN_TIMEOUT := 0
-DEFAULT_HIDDEN_TIMEOUT_BOOL := true
-confflags += \
-	--enable-ubuntu-recovery \
-	--enable-quiet-boot \
-	--enable-quick-boot \
-	--enable-gfxpayload-dynamic \
-	--enable-vt-handoff
-substvars := \
-	-Vlsb-base-depends="lsb-base (>= 3.0-6)" \
-	-Vgfxpayload-depends="grub-gfxpayload-lists [any-i386 any-amd64]"
+ifeq ($(DEB_HOST_ARCH_CPU),ppc64el)
+FLICKER_FREE_BOOT := no
+else
+FLICKER_FREE_BOOT := yes
+endif
+confflags += --enable-ubuntu-recovery
 else ifeq (yes,$(shell dpkg-vendor --derives-from Tanglu && echo yes))
 DEFAULT_CMDLINE := quiet splash
 DEFAULT_TIMEOUT := 10
+FLICKER_FREE_BOOT := yes
+else
+DEFAULT_CMDLINE := quiet
+DEFAULT_TIMEOUT := 5
+FLICKER_FREE_BOOT := no
+endif
+
+ifeq ($(FLICKER_FREE_BOOT),yes)
 DEFAULT_HIDDEN_TIMEOUT := 0
 DEFAULT_HIDDEN_TIMEOUT_BOOL := true
 confflags += \
@@ -77,15 +86,12 @@ confflags += \
 	--enable-quick-boot \
 	--enable-gfxpayload-dynamic \
 	--enable-vt-handoff
-substvars := \
+substvars += \
 	-Vlsb-base-depends="lsb-base (>= 3.0-6)" \
 	-Vgfxpayload-depends="grub-gfxpayload-lists [any-i386 any-amd64]"
 else
-DEFAULT_CMDLINE := quiet
-DEFAULT_TIMEOUT := 5
 DEFAULT_HIDDEN_TIMEOUT :=
 DEFAULT_HIDDEN_TIMEOUT_BOOL := false
-substvars :=
 endif
 
 SB_PACKAGE :=
@@ -107,7 +113,7 @@ override_dh_auto_build: $(patsubst %,build/%,$(BUILD_PACKAGES))
 override_dh_auto_install: $(patsubst %,install/%,$(BUILD_PACKAGES))
 
 $(patsubst %,configure/%,$(REAL_PACKAGES)) :: configure/% : debian/stamps/configure-%
-$(patsubst %,build/%,$(REAL_PACKAGES) grub-rescue-pc) :: build/% : debian/stamps/build-%
+$(patsubst %,build/%,$(REAL_PACKAGES) $(EXTRA_PACKAGES)) :: build/% : debian/stamps/build-%
 
 debian/stamps/configure-%: package = $(subst debian/stamps/configure-,,$@)
 debian/stamps/configure-%: export DH_OPTIONS = -p$(package) -Bobj/$(package)
@@ -134,17 +140,14 @@ debian/stamps/autogen: autogen.sh configure.ac Makefile.util.def grub-core/Makef
 	touch $@
 
 debian/stamps/configure-grub-common: debian/stamps/configure-grub-$(COMMON_PLATFORM)
-
-debian/stamps/build-grub-common: debian/stamps/build-grub-$(COMMON_PLATFORM)
-
-debian/stamps/configure-grub-pc debian/stamps/configure-grub-coreboot debian/stamps/configure-grub-emu debian/stamps/configure-grub-uboot debian/stamps/configure-grub-yeeloong: debian/stamps/autogen
-	mkdir -p debian/stamps obj/$(package)
-	dh_auto_configure -- $(confflags) --with-platform=$(subst grub-,,$(package))
 	touch $@
 
-debian/stamps/configure-grub-ieee1275: debian/stamps/autogen
+debian/stamps/build-grub-common: debian/stamps/build-grub-$(COMMON_PLATFORM)
+	touch $@
+
+debian/stamps/configure-grub-none debian/stamps/configure-grub-pc debian/stamps/configure-grub-ieee1275 debian/stamps/configure-grub-coreboot debian/stamps/configure-grub-emu debian/stamps/configure-grub-uboot debian/stamps/configure-grub-yeeloong: debian/stamps/autogen
 	mkdir -p debian/stamps obj/$(package)
-	dh_auto_configure -- $(confflags) --with-platform=$(subst grub-,,$(package)) $(if $(filter ppc64el,$(DEB_HOST_ARCH_CPU)),--target=powerpc-linux-gnu TARGET_CC=powerpc-linux-gnu-gcc-4.9)
+	dh_auto_configure -- $(confflags) --with-platform=$(subst grub-,,$(package))
 	touch $@
 
 # This name scheme leaves room for things like amd32 someday
@@ -173,14 +176,47 @@ debian/stamps/configure-grub-firmware-qemu: debian/stamps/autogen
 	dh_auto_configure -- $(confflags) --with-platform=qemu
 	touch $@
 
-debian/stamps/build-grub-efi-ia32 debian/stamps/build-grub-efi-amd64 debian/stamps/build-grub-efi-ia64 debian/stamps/build-grub-efi-arm debian/stamps/build-grub-efi-arm64 debian/stamps/build-grub-ieee1275 debian/stamps/build-grub-coreboot debian/stamps/build-grub-emu debian/stamps/build-grub-uboot debian/stamps/build-grub-xen-i386 debian/stamps/build-grub-xen-amd64 debian/stamps/build-grub-yeeloong: debian/stamps/build-%: debian/stamps/configure-%
+debian/stamps/build-grub-none debian/stamps/build-grub-efi-ia32 debian/stamps/build-grub-efi-amd64 debian/stamps/build-grub-efi-ia64 debian/stamps/build-grub-efi-arm debian/stamps/build-grub-efi-arm64 debian/stamps/build-grub-coreboot debian/stamps/build-grub-emu debian/stamps/build-grub-uboot debian/stamps/build-grub-xen-i386 debian/stamps/build-grub-xen-amd64 debian/stamps/build-grub-yeeloong: debian/stamps/build-%: debian/stamps/configure-%
 	dh_auto_build
+	touch $@
+
+debian/stamps/build-grub-xen-host-i386: PVBOOT_ARCH := i386
+debian/stamps/build-grub-xen-host-amd64: PVBOOT_ARCH := x86_64
+debian/stamps/build-grub-xen-host-%: debian/stamps/build-grub-xen-%
+	target=$(subst debian/stamps/build-grub-xen-host-,,$@) ; \
+	obj_dir=$(CURDIR)/obj/grub-xen-$${target} ; \
+	grub_dir=`mktemp -d` ; \
+	grub_memdisk=`mktemp` ; \
+	trap "rm -rf $${grub_dir} $${grub_memdisk}" EXIT HUP INT QUIT TERM ; \
+	mkdir -p $${grub_dir}/boot/grub ; \
+	mkdir -p $(CURDIR)/obj/$(package) ; \
+	sed -e "s/@@PVBOOT_ARCH@@/$(PVBOOT_ARCH)/g" \
+	    <debian/grub-xen-host_grub.cfg \
+	    >$${grub_dir}/grub.cfg ; \
+	tar -cf - -C $${grub_dir} grub.cfg > $${grub_memdisk} ; \
+	$${obj_dir}/grub-mkimage \
+		-O $(PVBOOT_ARCH)-xen \
+		-c $(CURDIR)/debian/grub-xen-host_grub-bootstrap.cfg \
+		-d $${obj_dir}/grub-core \
+		$${obj_dir}/grub-core/*.mod \
+		-m $${grub_memdisk} \
+		-o $(CURDIR)/obj/$(package)/grub-$(PVBOOT_ARCH)-xen.bin
+	touch $@
+
+debian/stamps/build-grub-xen-host: debian/stamps/build-grub-xen-host-i386 debian/stamps/build-grub-xen-host-amd64
 	touch $@
 
 debian/stamps/build-grub-pc: debian/stamps/configure-grub-pc
 	dh_auto_build
 ifeq ($(with_check), yes)
 	LC_CTYPE=C.UTF-8 PATH="$$PATH:/sbin:/usr/sbin" VERBOSE=1 dh_auto_test --max-parallel=1
+endif
+	touch $@
+
+debian/stamps/build-grub-ieee1275: debian/stamps/configure-grub-ieee1275
+	dh_auto_build
+ifeq ($(DEB_HOST_ARCH_CPU),ppc64el)
+	$(CC) $(HOST_CFLAGS) debian/prep-bootdev.c -o debian/prep-bootdev -lparted
 endif
 	touch $@
 
@@ -235,6 +271,13 @@ platform_subst = \
 			DEFAULT_HIDDEN_TIMEOUT_BOOL="$(DEFAULT_HIDDEN_TIMEOUT_BOOL)" \
 			debian/$(1) >> debian/$(2).$(3); \
 	fi
+
+install/grub-none:
+	dh_auto_install --destdir=debian/tmp-$(package)
+
+	# Avoid failures later if we're building from a tree with no .po
+	# files.
+	mkdir -p debian/tmp-$(package)/usr/share/locale
 
 install/grub-pc install/grub-efi-ia32 install/grub-efi-amd64 install/grub-efi-ia64 install/grub-efi-arm install/grub-efi-arm64 install/grub-ieee1275 install/grub-coreboot install/grub-emu install/grub-uboot install/grub-xen install/grub-yeeloong:
 	set -e ; \
@@ -296,7 +339,8 @@ install/grub-pc install/grub-efi-ia32 install/grub-efi-amd64 install/grub-efi-ia
 		| sed -e "s%.*%$(package_bin): unstripped-binary-or-object &%g" \
 	>> $(CURDIR)/debian/$(package_bin)/usr/share/lintian/overrides/$(package_bin)
 	if ([ "$@" = "install/grub-efi-amd64" ] && [ "$(DEB_HOST_ARCH_CPU)" = "i386" ]) || \
-	   [ "$@" = "install/grub-xen" ] ; then \
+	   ([ "$@" != "install/grub-emu" ] && [ "$(DEB_HOST_ARCH_CPU):$(DEB_HOST_ARCH_BITS)" = "amd64:32" ]) || \
+	   [ "$@" = "install/grub-xen" ]; then \
 		echo "$(package_bin): binary-from-other-architecture *.mod" \
 			>> debian/$(package_bin)/usr/share/lintian/overrides/$(package_bin) ; \
 		cd debian/tmp-$(package) && find usr/lib/grub -name kernel.img \
@@ -309,7 +353,7 @@ install/grub-pc install/grub-efi-ia32 install/grub-efi-amd64 install/grub-efi-ia
 	    [ "$@" = "install/grub-xen" ] || \
 	    [ "$@" = "install/grub-emu" ]) && \
 	   [ "$(DEB_HOST_ARCH_OS)" = "linux" ] && \
-	   [ "$(DEB_HOST_ARCH_CPU)" = "i386" ] ; then \
+	   [ "$(DEB_HOST_ARCH_CPU):$(DEB_HOST_ARCH_BITS)" != "amd64:64" ] ; then \
 		echo "$(package_bin): binary-from-other-architecture *efiemu64.o" \
 			>> debian/$(package_bin)/usr/share/lintian/overrides/$(package_bin) ; \
 	fi
@@ -323,6 +367,7 @@ install/grub-pc install/grub-efi-ia32 install/grub-efi-amd64 install/grub-efi-ia
 		| sed -e "s%.*%$(package_dbg): statically-linked-binary &%g" \
 	>> $(CURDIR)/debian/$(package_dbg)/usr/share/lintian/overrides/$(package_dbg)
 	if ([ "$@" = "install/grub-efi-amd64" ] && [ "$(DEB_HOST_ARCH_CPU)" = "i386" ]) || \
+	   ([ "$@" != "install/grub-emu" ] && [ "$(DEB_HOST_ARCH_CPU):$(DEB_HOST_ARCH_BITS)" = "amd64:32" ]) || \
 	   [ "$@" = "install/grub-xen" ] ; then \
 		echo "$(package_dbg): binary-from-other-architecture *.module" \
 			>> debian/$(package_dbg)/usr/share/lintian/overrides/$(package_dbg) ; \
@@ -356,7 +401,7 @@ ifeq (yes,$(shell dpkg-vendor --derives-from Ubuntu && echo yes))
 endif
 
 override_dh_install:
-	dh_install -pgrub2 -pgrub-linuxbios -pgrub-efi -pgrub-rescue-pc -pgrub-firmware-qemu
+	dh_install -pgrub2 -pgrub-linuxbios -pgrub-efi -pgrub-rescue-pc -pgrub-firmware-qemu -pgrub-xen-host
 	dh_install -pgrub-common -pgrub2-common -pgrub-theme-starfield -pgrub-mount-udeb --sourcedir=debian/tmp-grub-$(COMMON_PLATFORM)
 	rm -f debian/grub2-common/usr/share/info/dir*
 	rm -f debian/grub-theme-starfield/usr/share/grub/themes/starfield/COPYING.CC-BY-SA-3.0
@@ -367,10 +412,12 @@ override_dh_install:
 	done
 	dh_install -pgrub-emu --sourcedir=debian/tmp-grub-emu
 	dh_install -pgrub-emu-dbg --sourcedir=debian/tmp-grub-emu
+ifneq (,$(filter grub2-common,$(BUILD_PACKAGES)))
 	sed -i \
 		-e "s/@DEFAULT_CMDLINE@/$(DEFAULT_CMDLINE)/g" \
 		-e "s/@DEFAULT_TIMEOUT@/$(DEFAULT_TIMEOUT)/g" \
 		debian/grub2-common/usr/share/grub/default/grub
+endif
 ifneq (,$(DEFAULT_HIDDEN_TIMEOUT))
 	perl -pi -e 's/^GRUB_TIMEOUT=.*/GRUB_HIDDEN_TIMEOUT=0\nGRUB_HIDDEN_TIMEOUT_QUIET=true\n$$&/' \
 		debian/grub2-common/usr/share/grub/default/grub
@@ -383,13 +430,10 @@ endif
 endif
 
 override_dh_installdocs:
-	dh_installdocs -pgrub-common -pgrub-rescue-pc -pgrub-firmware-qemu -A AUTHORS NEWS README THANKS TODO
-	dh_installdocs -Ngrub-common -Ngrub-rescue-pc -Ngrub-firmware-qemu --link-doc=grub-common
+	dh_installdocs -pgrub-common -pgrub-rescue-pc -pgrub-firmware-qemu -pgrub-xen-host -A AUTHORS NEWS README THANKS TODO
+	dh_installdocs -Ngrub-common -Ngrub-rescue-pc -Ngrub-firmware-qemu -Ngrub-xen-host --link-doc=grub-common
 
-ifeq (yes,$(shell dpkg-vendor --derives-from Ubuntu && echo yes))
-override_dh_installinit:
-	dh_installinit -- start 99 2 3 4 5 .
-else ifeq (yes,$(shell dpkg-vendor --derives-from Tanglu && echo yes))
+ifeq ($(FLICKER_FREE_BOOT),yes)
 override_dh_installinit:
 	dh_installinit -- start 99 2 3 4 5 .
 else

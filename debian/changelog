@@ -1,3 +1,191 @@
+grub2 (2.02~beta2-22) unstable; urgency=medium
+
+  * Make grub-common's Suggests on grub-emu architecture-specific, to
+    quieten debcheck.
+  * Remove unnecessary feature test macros from hostfs, to fix building with
+    glibc 2.20.
+  * Backport from upstream:
+    - Fix UEFI boot failure with some firmware that returns incorrect paths
+      (closes: #735960).
+
+ -- Colin Watson <cjwatson@debian.org>  Mon, 23 Mar 2015 15:30:15 +0000
+
+grub2 (2.02~beta2-21) unstable; urgency=medium
+
+  [ Mathieu Trudel-Lapierre ]
+  * Fix overlap check in check_blocklists for load_env (backported patch
+    from upstream commit 1f6af2a9; LP: #1311247).
+
+  [ Steve McIntyre ]
+  * Add support for running a 64-bit Linux kernel on a 32-bit EFI (closes:
+    #775202).
+
+  [ Colin Watson ]
+  * Use mtmsr rather than mtmsrd in ppc64el-disable-vsx.patch, since the
+    "VSX Available" bit is in the lower half of the MSR anyway, and mtmsrd
+    faults on 32-bit systems (closes: #776400).
+
+ -- Colin Watson <cjwatson@debian.org>  Tue, 27 Jan 2015 20:37:04 +0000
+
+grub2 (2.02~beta2-20) unstable; urgency=medium
+
+  [ Colin Watson ]
+  * Generate alternative init entries in advanced menu (closes: #757298,
+    #773173).
+  * When configuring grub-pc, copy unicode.pf2 to /boot/grub/ even if
+    /boot/grub/grub.cfg does not exist yet; this matches the behaviour of
+    grub-efi-* (thanks, Luca Capello; closes: #617196).
+
+  [ Debconf translations ]
+  * [fi] Finnish (Timo Jyrinki; closes: #774060).
+  * [mr] Marathi (sampada nakhare; closes: #773901).
+
+ -- Colin Watson <cjwatson@debian.org>  Sat, 03 Jan 2015 12:39:52 +0000
+
+grub2 (2.02~beta2-19) unstable; urgency=medium
+
+  [ Steve McIntyre ]
+  * Handle case insensitivity of VFAT filesystem on /boot/EFI when installing
+    extra cpoy of grub-efi to the removable media path
+    /boot/efi/EFI/BOOT/BOOT$ARCH.EFI (Closes: #773092)
+  * Make the force_efi_extra_removable debconf prompt only show up when
+    configuring grub-*efi*. Closes: #773004
+
+  [ Ian Campbell ]
+  * Improvements to English wording of new debconf template from Justin B Rye.
+  * Add debian/README.source.
+
+  [ Debconf translations ]
+  * [eu] Basque (Iñaki Larrañaga Murgoitio, Closes: #772946)
+  * [be] Belarusian (Viktar Siarheichyk, Closes: #773054)
+  * [pt_BR] Brazilian Portuguese (Adriano Rafael Gomes, Closes: #773682)
+  * [bg] Bulgarian (Damyan Ivanov, Closes: #772878)
+  * [cs] Czech (Miroslav Kure, Closes: #772924)
+  * [nl] Dutch (Frans Spiesschaert, Closes: 773637)
+  * [eo] Esperanto (Felipe Castro, Closes: #773096)
+  * [fi] Finnish (Timo Jyrinki, Closes: #772921)
+  * [fr] French (Christian PERRIER, Closes: #772771)
+  * [de] German (Martin Eberhard Schauer, Closes: #773664)
+  * [el] Greek (Panagiotis Georgakopoulos, Closes: #773068)
+  * [he] Hebrew (Omer Zak, Closes: #773377)
+  * [is] Icelandic (Sveinn í Felli, Closes: #772922)
+  * [it] Italian (Luca Monducci, Closes: #773553)
+  * [kk] Kazakh (Baurzhan Muftakhidinov, Closes: #772916)
+  * [lt] Lithuanian (Rimas Kudelis, Closes: #773060)
+  * [pl] Polish (Łukasz Dulny, Closes: #772930)
+  * [ro] Romanian (Andrei POPESCU, Closes: #773349)
+  * [ru] Russian (Yuri Kozlov, Closes: #773211)
+  * [sl] Slovenian (Vanja Cvelbar, Closes: #773508)
+  * [es] Spanish (Manuel "Venturi" Porras Peralta, Closes: #773222)
+  * [sv] Swedish (Martin Bagge & Anders Jonsson, Closes: 773208)
+  * [th] Thai (Theppitak Karoonboonyanan, Closes: #773160)
+  * [zh_TW] Traditional Chinese (Vincent W. Chen, Closes: #773418)
+  * [tr] Turkish (Mert Dirik, Closes: #773666)
+
+ -- Ian Campbell <ijc@debian.org>  Mon, 22 Dec 2014 11:55:33 +0000
+
+grub2 (2.02~beta2-18) unstable; urgency=medium
+
+  [ Steve McIntyre ]
+  * Add support for forcing an extra copy of grub-efi to the removable
+    media path /boot/efi/EFI/BOOT/BOOT$ARCH.EFI (#767037)
+
+  [ Ian Campbell ]
+  * Add myself to Uploaders.
+
+ -- Ian Campbell <ijc@debian.org>  Mon, 08 Dec 2014 08:38:38 +0000
+
+grub2 (2.02~beta2-17) unstable; urgency=medium
+
+  [ Colin Watson ]
+  * Fix up some pointer-to-integer casts in linuxefi so that it can build on
+    i386-efi.
+  * Backport from upstream:
+    - Fix typo (gettext_print instead of gettext_printf) (LP: #1390766).
+
+  [ Ian Campbell ]
+  * Correct syntax error in grub-xen-host bootstrap configuration file.
+  * Log failure when grub-install fails in postinst, rather than failing the
+    entire postinst. (Closes: #770412)
+  * Arrange to insmod xzio and lzopio when booting a kernel as a Xen guest.
+    (Closes: #755256)
+
+ -- Ian Campbell <ijc@debian.org>  Sun, 30 Nov 2014 17:15:21 +0000
+
+grub2 (2.02~beta2-16) unstable; urgency=medium
+
+  [ Ian Campbell ]
+  * Provide prebuilt grub-xen binaries for host use in a new grub-xen-host
+    package.
+  * Build/Install binaries into /boot/xen when installing grub-xen.
+
+ -- Ian Campbell <ijc@debian.org>  Thu, 06 Nov 2014 13:32:01 +0000
+
+grub2 (2.02~beta2-15) unstable; urgency=medium
+
+  * Disable nvram installation again on chrp_ibm machines that are emulated
+    by qemu; that doesn't have nvram devices so the nvram utility inevitably
+    fails.
+
+ -- Colin Watson <cjwatson@debian.org>  Wed, 15 Oct 2014 21:34:02 +0100
+
+grub2 (2.02~beta2-14) unstable; urgency=medium
+
+  * On architectures without a real GRUB port, just build the utilities.
+    This makes tools such as grub-probe and grub-fstest available
+    everywhere, and makes grub-mount available on all Linux and kFreeBSD
+    architectures.
+  * Remove .MIPS.abiflags section from images (thanks, Jurica Stanojkovic,
+    although I used a slightly simpler approach; closes: #762307).
+  * Include a text attribute reset in the clear command for ppc
+    (LP: #1295255).
+  * Disable VSX instruction on powerpc startup to fix booting on ppc64el.
+  * Stop adding a CHRP note on chrp_ibm machines, since that apparently
+    breaks PowerVM and isn't needed on other machine types as far as we can
+    tell (LP: #1334793).
+  * Refactor flicker-free-boot configuration in debian/rules to reduce
+    duplication.
+  * Disable flicker-free-boot on Ubuntu ppc64el for now, as it isn't needed
+    there and causes too many problems (LP: #1338471).
+  * Use nvram rather than nvsetenv on chrp_ibm machines, since that tool is
+    better-supported and copes with such things as nvram being missing in
+    qemu.
+  * Remove brace-expansion from the postrm, and switch the preinst and
+    postrm to /bin/sh (closes: #762940).
+  * On ppc64el, look for a PReP partition and install the core image to the
+    first one if found.  For now this is done by borrowing prep-bootdev.c
+    from grub-installer, incurring a dependency on libparted.
+
+ -- Colin Watson <cjwatson@debian.org>  Fri, 26 Sep 2014 18:05:15 +0100
+
+grub2 (2.02~beta2-13) unstable; urgency=medium
+
+  * Drop gcc-4.9-multilib build-dependency on ppc64el again.
+
+ -- Colin Watson <cjwatson@debian.org>  Fri, 19 Sep 2014 20:30:31 +0100
+
+grub2 (2.02~beta2-12) unstable; urgency=medium
+
+  [ Colin Watson ]
+  * Point Vcs-* fields back at master.
+  * Support grub-emu on x32 (closes: #760428).
+  * Adjust packaging for x32:
+    - Build-depend on cpio on x32 as well.
+    - Make grub-efi-ia32-bin and grub-efi-amd64-bin depend on efibootmgr on
+      any Linux architecture for which they are built (in practice, adding
+      x32).
+    - Build grub-mount-udeb on x32 as well.
+    - Add Lintian binary-from-other-architecture overrides where
+      appropriate.
+  * Apply patches from Paulo Flabiano Smorigo to allow building a 32-bit
+    big-endian loader on ppc64el using -m32 -mbig-endian, replacing the
+    cross-compiler hack.
+
+  [ Ian Campbell ]
+  * Add dependency on efibootmgr to grub-efi-{arm,arm64}-bin.
+
+ -- Colin Watson <cjwatson@debian.org>  Fri, 19 Sep 2014 15:19:26 +0100
+
 grub2 (2.02~beta2-11) unstable; urgency=medium
 
   * Force grub-pc/mixed_legacy_and_grub2 to be reshown, rather than failing
