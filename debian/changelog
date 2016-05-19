@@ -1,17 +1,26 @@
-grub2 (1.98+20100804-14skerlet2) unstable; urgency=low
+grub2 (1.98+20100804-14+squeeze2) squeeze-lts; urgency=high
 
-  * Fix kern/main.c.
-    - Edit grub_printf() argument is "\n"
-      because grub_printf() cannot get "" argument.
+  * Non-maintainer upload by the Squeeze LTS Team.
+  * Fix CVE-2015-8370: buffer overflow when checking password entered during
+    bootup.
 
- -- Skerlet Project Team <skerlet@swc.toshiba.co.jp>  Tue, 31 Jan 2012 16:24:05 +0900
+ -- Santiago Ruano Rincón <santiagorr@riseup.net>  Sat, 12 Dec 2015 11:23:57 +0100
 
-grub2 (1.98+20100804-14skerlet1) unstable; urgency=low
+grub2 (1.98+20100804-14+squeeze1) stable; urgency=low
 
-  * Delete booting messages.  - "GRUB loading.", "Welcome to GRUB!" and "Booting a command list".
-  * Change "Debian" to "Skerlet" in debian/default/grub.
+  [ Colin Watson ]
+  * Backport from upstream:
+    - Handle Xen split-partition disk image devices (closes: 601974).
+    - Ensure uniqueness of RAID array numbers even if some elements have a
+      name (closes: #609804).
 
- -- Skerlet Project Team <skerlet@swc.toshiba.co.jp>  Tue, 31 Jan 2012 14:49:12 +0900
+  [ Robert Millan ]
+  * Fix grub-probe detection for ATA devices using `ata' driver on kFreeBSD 9.
+    - kfreebsd-9_ada_devices.patch
+  * Mark la_array as packed.
+    - zfs_packed_la_array.patch
+
+ -- Robert Millan <rmh@debian.org>  Sun, 18 Sep 2011 18:53:13 +0200
 
 grub2 (1.98+20100804-14) unstable; urgency=low
 

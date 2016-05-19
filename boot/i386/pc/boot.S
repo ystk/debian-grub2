@@ -379,7 +379,7 @@ LOCAL(general_error):
 LOCAL(stop):
 	jmp	LOCAL(stop)
 
-notification_string:	.asciz ""
+notification_string:	.asciz "GRUB "
 geometry_error_string:	.asciz "Geom"
 hd_probe_error_string:	.asciz "Hard Disk"
 read_error_string:	.asciz "Read"
