@@ -23,11 +23,9 @@ Patch-Name: net-ramp-up-interval.patch
  include/grub/net.h    | 1 +
  5 files changed, 10 insertions(+), 5 deletions(-)
 
-diff --git a/grub-core/net/arp.c b/grub-core/net/arp.c
-index e92c7e7..d62d0cc 100644
 --- a/grub-core/net/arp.c
 +++ b/grub-core/net/arp.c
-@@ -110,7 +110,8 @@ grub_net_arp_send_request (struct grub_net_network_level_interface *inf,
+@@ -110,7 +110,8 @@ grub_net_arp_send_request (struct grub_n
  	return GRUB_ERR_NONE;
        pending_req = proto_addr->ipv4;
        have_pending = 0;
@@ -37,11 +35,9 @@ index e92c7e7..d62d0cc 100644
        if (grub_net_link_layer_resolve_check (inf, proto_addr))
  	return GRUB_ERR_NONE;
        nb.data = nbd;
-diff --git a/grub-core/net/icmp6.c b/grub-core/net/icmp6.c
-index 2741e6f..bbc9020 100644
 --- a/grub-core/net/icmp6.c
 +++ b/grub-core/net/icmp6.c
-@@ -518,7 +518,8 @@ grub_net_icmp6_send_request (struct grub_net_network_level_interface *inf,
+@@ -518,7 +518,8 @@ grub_net_icmp6_send_request (struct grub
      {
        if (grub_net_link_layer_resolve_check (inf, proto_addr))
  	break;
@@ -51,11 +47,9 @@ index 2741e6f..bbc9020 100644
        if (grub_net_link_layer_resolve_check (inf, proto_addr))
  	break;
        nb->data = nbd;
-diff --git a/grub-core/net/net.c b/grub-core/net/net.c
-index 56355f3..1521d8d 100644
 --- a/grub-core/net/net.c
 +++ b/grub-core/net/net.c
-@@ -1558,8 +1558,9 @@ grub_net_fs_read_real (grub_file_t file, char *buf, grub_size_t len)
+@@ -1558,8 +1558,9 @@ grub_net_fs_read_real (grub_file_t file,
        if (!net->eof)
  	{
  	  try++;
@@ -67,11 +61,9 @@ index 56355f3..1521d8d 100644
        else
  	return total;
      }
-diff --git a/grub-core/net/tftp.c b/grub-core/net/tftp.c
-index 9c489f1..5173614 100644
 --- a/grub-core/net/tftp.c
 +++ b/grub-core/net/tftp.c
-@@ -398,7 +398,8 @@ tftp_open (struct grub_file *file, const char *filename)
+@@ -398,7 +398,8 @@ tftp_open (struct grub_file *file, const
  	  destroy_pq (data);
  	  return err;
  	}
@@ -81,8 +73,6 @@ index 9c489f1..5173614 100644
        if (data->have_oack)
  	break;
      }
-diff --git a/include/grub/net.h b/include/grub/net.h
-index de6259e..0e0a605 100644
 --- a/include/grub/net.h
 +++ b/include/grub/net.h
 @@ -532,5 +532,6 @@ extern char *grub_net_default_server;

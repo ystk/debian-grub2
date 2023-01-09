@@ -13,8 +13,6 @@ Patch-Name: ppc64el-flags.patch
  configure.ac | 9 +++++++++
  1 file changed, 9 insertions(+)
 
-diff --git a/configure.ac b/configure.ac
-index dd4ba1f..c21307c 100644
 --- a/configure.ac
 +++ b/configure.ac
 @@ -119,6 +119,7 @@ if test "x$with_platform" = x; then
@@ -33,7 +31,7 @@ index dd4ba1f..c21307c 100644
  esac
  
  # Check if the platform is supported, make final adjustments.
-@@ -570,6 +572,13 @@ if test "x$target_cpu" = xi386 && test "x$platform" != xemu; then
+@@ -570,6 +572,13 @@ if test "x$target_cpu" = xi386 && test "
    TARGET_CFLAGS="$TARGET_CFLAGS -march=i386"
  fi
  

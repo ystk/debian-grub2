@@ -31,8 +31,6 @@ Patch-Name: quick_boot.patch
  util/grub.d/30_os-prober.in | 21 ++++++++++++++++
  7 files changed, 117 insertions(+), 13 deletions(-)
 
-diff --git a/configure.ac b/configure.ac
-index 7c8d0af..2a7e410 100644
 --- a/configure.ac
 +++ b/configure.ac
 @@ -1594,6 +1594,17 @@ else
@@ -53,11 +51,9 @@ index 7c8d0af..2a7e410 100644
  LIBS=""
  
  AC_SUBST([FONT_SOURCE])
-diff --git a/docs/grub.texi b/docs/grub.texi
-index 46b9e7f..28743d5 100644
 --- a/docs/grub.texi
 +++ b/docs/grub.texi
-@@ -1490,6 +1490,15 @@ This option may be set to a list of GRUB module names separated by spaces.
+@@ -1490,6 +1490,15 @@ This option may be set to a list of GRUB
  Each module will be loaded as early as possible, at the start of
  @file{grub.cfg}.
  
@@ -73,11 +69,9 @@ index 46b9e7f..28743d5 100644
  @end table
  
  The following options are still accepted for compatibility with existing
-diff --git a/grub-core/normal/menu.c b/grub-core/normal/menu.c
-index 7b55c27..a968e0f 100644
 --- a/grub-core/normal/menu.c
 +++ b/grub-core/normal/menu.c
-@@ -604,6 +604,30 @@ run_menu (grub_menu_t menu, int nested, int *auto_boot)
+@@ -604,6 +604,30 @@ run_menu (grub_menu_t menu, int nested,
        static struct grub_term_coordinate *pos;
        int entry = -1;
  
@@ -108,8 +102,6 @@ index 7b55c27..a968e0f 100644
        if (timeout_style == TIMEOUT_STYLE_COUNTDOWN && timeout)
  	{
  	  pos = grub_term_save_pos ();
-diff --git a/util/grub-mkconfig.in b/util/grub-mkconfig.in
-index 62780bf..17350d4 100644
 --- a/util/grub-mkconfig.in
 +++ b/util/grub-mkconfig.in
 @@ -236,7 +236,8 @@ export GRUB_DEFAULT \
@@ -122,8 +114,6 @@ index 62780bf..17350d4 100644
  
  if test "x${grub_cfg}" != "x"; then
    rm -f "${grub_cfg}.new"
-diff --git a/util/grub.d/00_header.in b/util/grub.d/00_header.in
-index 0c82f23..8dc5592 100644
 --- a/util/grub.d/00_header.in
 +++ b/util/grub.d/00_header.in
 @@ -21,6 +21,8 @@ prefix="@prefix@"
@@ -135,7 +125,7 @@ index 0c82f23..8dc5592 100644
  
  export TEXTDOMAIN=@PACKAGE@
  export TEXTDOMAINDIR="@localedir@"
-@@ -44,6 +46,7 @@ if [ "x${GRUB_TIMEOUT_BUTTON}" = "x" ] ; then GRUB_TIMEOUT_BUTTON="$GRUB_TIMEOUT
+@@ -44,6 +46,7 @@ if [ "x${GRUB_TIMEOUT_BUTTON}" = "x" ] ;
  
  cat << EOF
  if [ -s \$prefix/grubenv ]; then
@@ -148,7 +138,7 @@ index 0c82f23..8dc5592 100644
    fi
  }
 +EOF
- 
++
 +if [ "$quick_boot" = 1 ]; then
 +    cat <<EOF
 +function recordfail {
@@ -170,7 +160,7 @@ index 0c82f23..8dc5592 100644
 +}
 +EOF
 +fi
-+
+ 
 +cat <<EOF
  function load_video {
  EOF
@@ -232,8 +222,6 @@ index 0c82f23..8dc5592 100644
  fi
  EOF
  }
-diff --git a/util/grub.d/10_linux.in b/util/grub.d/10_linux.in
-index 0616c6d..aa2c369 100644
 --- a/util/grub.d/10_linux.in
 +++ b/util/grub.d/10_linux.in
 @@ -22,6 +22,7 @@ exec_prefix="@exec_prefix@"
@@ -254,8 +242,6 @@ index 0616c6d..aa2c369 100644
    if [ x$type != xrecovery ] ; then
        save_default_entry | grub_add_tab
    fi
-diff --git a/util/grub.d/30_os-prober.in b/util/grub.d/30_os-prober.in
-index 1c44cf2..1106ad1 100644
 --- a/util/grub.d/30_os-prober.in
 +++ b/util/grub.d/30_os-prober.in
 @@ -20,12 +20,26 @@ set -e

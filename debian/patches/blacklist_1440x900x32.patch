@@ -12,11 +12,9 @@ Patch-Name: blacklist_1440x900x32.patch
  grub-core/video/i386/pc/vbe.c | 9 +++++++++
  1 file changed, 9 insertions(+)
 
-diff --git a/grub-core/video/i386/pc/vbe.c b/grub-core/video/i386/pc/vbe.c
-index 62b5c22..9a64904 100644
 --- a/grub-core/video/i386/pc/vbe.c
 +++ b/grub-core/video/i386/pc/vbe.c
-@@ -1053,6 +1053,15 @@ grub_video_vbe_setup (unsigned int width, unsigned int height,
+@@ -1053,6 +1053,15 @@ grub_video_vbe_setup (unsigned int width
  	      || vbe_mode_info.y_resolution > height)
  	    /* Resolution exceeds that of preferred mode.  */
  	    continue;

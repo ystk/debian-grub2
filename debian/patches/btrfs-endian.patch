@@ -15,11 +15,9 @@ Patch-Name: btrfs-endian.patch
  grub-core/fs/btrfs.c | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/grub-core/fs/btrfs.c b/grub-core/fs/btrfs.c
-index 89666b6..f7b6c15 100644
 --- a/grub-core/fs/btrfs.c
 +++ b/grub-core/fs/btrfs.c
-@@ -1201,7 +1201,7 @@ get_root (struct grub_btrfs_data *data, struct grub_btrfs_key *key,
+@@ -1201,7 +1201,7 @@ get_root (struct grub_btrfs_data *data,
    struct grub_btrfs_key key_out, key_in;
    struct grub_btrfs_root_item ri;
  

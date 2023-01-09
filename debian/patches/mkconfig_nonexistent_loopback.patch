@@ -13,8 +13,6 @@ Patch-Name: mkconfig_nonexistent_loopback.patch
  util/grub.d/30_os-prober.in | 9 +++++----
  2 files changed, 6 insertions(+), 5 deletions(-)
 
-diff --git a/util/grub-mkconfig_lib.in b/util/grub-mkconfig_lib.in
-index 6da2c2d..5992506 100644
 --- a/util/grub-mkconfig_lib.in
 +++ b/util/grub-mkconfig_lib.in
 @@ -143,7 +143,7 @@ prepare_grub_to_access_device ()
@@ -26,8 +24,6 @@ index 6da2c2d..5992506 100644
          ;;
        esac
      ;;
-diff --git a/util/grub.d/30_os-prober.in b/util/grub.d/30_os-prober.in
-index dd639dd..f8ac363 100644
 --- a/util/grub.d/30_os-prober.in
 +++ b/util/grub.d/30_os-prober.in
 @@ -212,6 +212,11 @@ EOF

@@ -13,11 +13,9 @@ Patch-Name: probe_fusionio.patch
  util/deviceiter.c               | 19 +++++++++++++++++++
  2 files changed, 32 insertions(+)
 
-diff --git a/grub-core/osdep/linux/getroot.c b/grub-core/osdep/linux/getroot.c
-index 772de0a..6788e39 100644
 --- a/grub-core/osdep/linux/getroot.c
 +++ b/grub-core/osdep/linux/getroot.c
-@@ -883,6 +883,19 @@ grub_util_part_to_disk (const char *os_dev, struct stat *st,
+@@ -883,6 +883,19 @@ grub_util_part_to_disk (const char *os_d
  	  *pp = '\0';
  	  return path;
  	}
@@ -37,8 +35,6 @@ index 772de0a..6788e39 100644
      }
  
    return path;
-diff --git a/util/deviceiter.c b/util/deviceiter.c
-index 75047ff..b61715d 100644
 --- a/util/deviceiter.c
 +++ b/util/deviceiter.c
 @@ -365,6 +365,12 @@ get_xvd_disk_name (char *name, int unit)
@@ -54,10 +50,14 @@ index 75047ff..b61715d 100644
  #endif
  
  static struct seen_device
-@@ -856,6 +862,19 @@ grub_util_iterate_devices (int (*hook) (const char *, int, void *), void *hook_d
- 	}
-     }
- 
+@@ -852,6 +858,19 @@ grub_util_iterate_devices (int (*hook) (
+       if (check_device_readable_unique (name))
+ 	{
+ 	  if (hook (name, 0, hook_data))
++	    goto out;
++	}
++    }
++
 +  /* FusionIO.  */
 +  for (i = 0; i < 26; i++)
 +    {
@@ -67,10 +67,6 @@ index 75047ff..b61715d 100644
 +      if (check_device_readable_unique (name))
 +	{
 +	  if (hook (name, 0, hook_data))
-+	    goto out;
-+	}
-+    }
-+
- # ifdef HAVE_DEVICE_MAPPER
- #  define dmraid_check(cond, ...) \
-   if (! (cond)) \
+ 	    goto out;
+ 	}
+     }

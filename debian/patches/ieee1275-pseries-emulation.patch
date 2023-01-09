@@ -17,8 +17,6 @@ Patch-Name: ieee1275-pseries-emulation.patch
  grub-core/kern/ieee1275/cmain.c | 4 +++-
  1 file changed, 3 insertions(+), 1 deletion(-)
 
-diff --git a/grub-core/kern/ieee1275/cmain.c b/grub-core/kern/ieee1275/cmain.c
-index d92ae14..3e12e6b 100644
 --- a/grub-core/kern/ieee1275/cmain.c
 +++ b/grub-core/kern/ieee1275/cmain.c
 @@ -84,8 +84,10 @@ grub_ieee1275_find_options (void)

@@ -29,8 +29,6 @@ Patch-Name: ppc64el-skip-libgcc.patch
  create mode 100644 grub-core/kern/powerpc/compiler-rt.S
  create mode 100644 include/grub/compiler-rt.h
 
-diff --git a/configure.ac b/configure.ac
-index c21307c..5ce3caf 100644
 --- a/configure.ac
 +++ b/configure.ac
 @@ -1022,7 +1022,7 @@ else
@@ -64,11 +62,9 @@ index c21307c..5ce3caf 100644
     TARGET_LDFLAGS_STATIC_LIBGCC="-static-libgcc"
  else
     TARGET_LDFLAGS_STATIC_LIBGCC=
-diff --git a/grub-core/Makefile.am b/grub-core/Makefile.am
-index 1b3142d..eab481c 100644
 --- a/grub-core/Makefile.am
 +++ b/grub-core/Makefile.am
-@@ -74,6 +74,7 @@ KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/i18n.h
+@@ -74,6 +74,7 @@ KERNEL_HEADER_FILES += $(top_srcdir)/inc
  KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/kernel.h
  KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/list.h
  KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/misc.h
@@ -76,8 +72,6 @@ index 1b3142d..eab481c 100644
  KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/mm.h
  KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/parser.h
  KERNEL_HEADER_FILES += $(top_srcdir)/include/grub/partition.h
-diff --git a/grub-core/Makefile.core.def b/grub-core/Makefile.core.def
-index 6a47ee1..223fca7 100644
 --- a/grub-core/Makefile.core.def
 +++ b/grub-core/Makefile.core.def
 @@ -132,6 +132,7 @@ kernel = {
@@ -96,9 +90,6 @@ index 6a47ee1..223fca7 100644
  
    sparc64_ieee1275 = kern/sparc64/cache.S;
    sparc64_ieee1275 = kern/sparc64/dl.c;
-diff --git a/grub-core/kern/compiler-rt.c b/grub-core/kern/compiler-rt.c
-new file mode 100644
-index 0000000..42689c0
 --- /dev/null
 +++ b/grub-core/kern/compiler-rt.c
 @@ -0,0 +1,166 @@
@@ -268,9 +259,6 @@ index 0000000..42689c0
 +}
 +
 +#endif
-diff --git a/grub-core/kern/powerpc/compiler-rt.S b/grub-core/kern/powerpc/compiler-rt.S
-new file mode 100644
-index 0000000..63e3a0d
 --- /dev/null
 +++ b/grub-core/kern/powerpc/compiler-rt.S
 @@ -0,0 +1,130 @@
@@ -404,9 +392,6 @@ index 0000000..63e3a0d
 +FUNCTION(_savegpr_31)	stw	31,-4(11)
 +			blr
 +CFI_ENDPROC
-diff --git a/include/grub/compiler-rt.h b/include/grub/compiler-rt.h
-new file mode 100644
-index 0000000..7f76967
 --- /dev/null
 +++ b/include/grub/compiler-rt.h
 @@ -0,0 +1,82 @@

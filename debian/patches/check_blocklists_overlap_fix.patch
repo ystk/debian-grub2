@@ -14,11 +14,9 @@ Patch-Name: check_blocklists_overlap_fix.patch
  grub-core/commands/loadenv.c | 13 ++-----------
  1 file changed, 2 insertions(+), 11 deletions(-)
 
-diff --git a/grub-core/commands/loadenv.c b/grub-core/commands/loadenv.c
-index 6af8112..acd93d1 100644
 --- a/grub-core/commands/loadenv.c
 +++ b/grub-core/commands/loadenv.c
-@@ -263,7 +263,7 @@ check_blocklists (grub_envblk_t envblk, struct blocklist *blocklists,
+@@ -263,7 +263,7 @@ check_blocklists (grub_envblk_t envblk,
        for (q = p->next; q; q = q->next)
          {
  	  grub_disk_addr_t s1, s2;
@@ -27,7 +25,7 @@ index 6af8112..acd93d1 100644
  
  	  s1 = p->sector;
  	  e1 = s1 + ((p->length + GRUB_DISK_SECTOR_SIZE - 1) >> GRUB_DISK_SECTOR_BITS);
-@@ -271,16 +271,7 @@ check_blocklists (grub_envblk_t envblk, struct blocklist *blocklists,
+@@ -271,16 +271,7 @@ check_blocklists (grub_envblk_t envblk,
  	  s2 = q->sector;
  	  e2 = s2 + ((q->length + GRUB_DISK_SECTOR_SIZE - 1) >> GRUB_DISK_SECTOR_BITS);
  

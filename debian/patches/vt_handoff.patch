@@ -17,8 +17,6 @@ Patch-Name: vt_handoff.patch
  util/grub.d/10_linux.in | 28 +++++++++++++++++++++++++++-
  2 files changed, 38 insertions(+), 1 deletion(-)
 
-diff --git a/configure.ac b/configure.ac
-index 7f26de6..735313d 100644
 --- a/configure.ac
 +++ b/configure.ac
 @@ -1616,6 +1616,17 @@ else
@@ -39,8 +37,6 @@ index 7f26de6..735313d 100644
  LIBS=""
  
  AC_SUBST([FONT_SOURCE])
-diff --git a/util/grub.d/10_linux.in b/util/grub.d/10_linux.in
-index 41f83ca..8d95887 100644
 --- a/util/grub.d/10_linux.in
 +++ b/util/grub.d/10_linux.in
 @@ -24,6 +24,7 @@ ubuntu_recovery="@UBUNTU_RECOVERY@"

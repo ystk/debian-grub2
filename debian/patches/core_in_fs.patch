@@ -10,8 +10,6 @@ Patch-Name: core_in_fs.patch
  util/setup.c | 8 ++++++++
  1 file changed, 8 insertions(+)
 
-diff --git a/util/setup.c b/util/setup.c
-index 9fb91a8..3945eff 100644
 --- a/util/setup.c
 +++ b/util/setup.c
 @@ -58,6 +58,8 @@

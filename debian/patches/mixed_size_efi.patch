@@ -21,8 +21,6 @@ Patch-Name: mixed_size_efi.patch
  grub-core/osdep/linux/platform.c | 38 +++++++++++++++++++++++++++++++++++++-
  1 file changed, 37 insertions(+), 1 deletion(-)
 
-diff --git a/grub-core/osdep/linux/platform.c b/grub-core/osdep/linux/platform.c
-index 033afd8..3675b23 100644
 --- a/grub-core/osdep/linux/platform.c
 +++ b/grub-core/osdep/linux/platform.c
 @@ -63,6 +63,42 @@ is_64_kernel (void)
@@ -68,7 +66,7 @@ index 033afd8..3675b23 100644
  const char *
  grub_install_get_default_x86_platform (void)
  { 
-@@ -85,7 +121,7 @@ grub_install_get_default_x86_platform (void)
+@@ -85,7 +121,7 @@ grub_install_get_default_x86_platform (v
        int found;
  
        grub_util_info ("...found");

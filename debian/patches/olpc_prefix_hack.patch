@@ -10,8 +10,6 @@ Patch-Name: olpc_prefix_hack.patch
  grub-core/kern/ieee1275/init.c | 11 +++++++++++
  1 file changed, 11 insertions(+)
 
-diff --git a/grub-core/kern/ieee1275/init.c b/grub-core/kern/ieee1275/init.c
-index 89b2822..ecce450 100644
 --- a/grub-core/kern/ieee1275/init.c
 +++ b/grub-core/kern/ieee1275/init.c
 @@ -65,6 +65,7 @@ grub_exit (void)
@@ -22,7 +20,7 @@ index 89b2822..ecce450 100644
  /* Translate an OF filesystem path (separated by backslashes), into a GRUB
     path (separated by forward slashes).  */
  static void
-@@ -79,10 +80,19 @@ grub_translate_ieee1275_path (char *filepath)
+@@ -79,10 +80,19 @@ grub_translate_ieee1275_path (char *file
        backslash = grub_strchr (filepath, '\\');
      }
  }
@@ -42,7 +40,7 @@ index 89b2822..ecce450 100644
  void
  grub_machine_get_bootlocation (char **device, char **path)
  {
-@@ -150,6 +160,7 @@ grub_machine_get_bootlocation (char **device, char **path)
+@@ -150,6 +160,7 @@ grub_machine_get_bootlocation (char **de
      }
    grub_free (bootpath);
  }

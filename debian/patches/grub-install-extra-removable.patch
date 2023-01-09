@@ -21,8 +21,6 @@ Patch-Name: grub-install-extra-removable.patch
  util/grub-install.c | 110 +++++++++++++++++++++++++++++++++++++++++++++++++++-
  1 file changed, 108 insertions(+), 2 deletions(-)
 
-diff --git a/util/grub-install.c b/util/grub-install.c
-index 7a7734e..54fbd35 100644
 --- a/util/grub-install.c
 +++ b/util/grub-install.c
 @@ -56,6 +56,7 @@
@@ -43,7 +41,7 @@ index 7a7734e..54fbd35 100644
    };
  
  static int fs_probe = 1;
-@@ -217,6 +219,10 @@ argp_parser (int key, char *arg, struct argp_state *state)
+@@ -217,6 +219,10 @@ argp_parser (int key, char *arg, struct
        removable = 1;
        return 0;
  
@@ -64,7 +62,7 @@ index 7a7734e..54fbd35 100644
    {0, 0, 0, 0, 0, 0}
  };
  
-@@ -829,6 +838,91 @@ fill_core_services (const char *core_services)
+@@ -829,6 +838,91 @@ fill_core_services (const char *core_ser
    free (sysv_plist);
  }
  

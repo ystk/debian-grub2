@@ -39,11 +39,9 @@ Patch-Name: probe-delimiter.patch
  util/grub-probe.c           | 46 ++++++++++++++++++++++-----------------------
  6 files changed, 49 insertions(+), 41 deletions(-)
 
-diff --git a/grub-core/disk/cryptodisk.c b/grub-core/disk/cryptodisk.c
-index 75c6e1f..f0e3a90 100644
 --- a/grub-core/disk/cryptodisk.c
 +++ b/grub-core/disk/cryptodisk.c
-@@ -762,25 +762,26 @@ grub_cryptodisk_cheat_insert (grub_cryptodisk_t newdev, const char *name,
+@@ -762,25 +762,26 @@ grub_cryptodisk_cheat_insert (grub_crypt
  
  void
  grub_util_cryptodisk_get_abstraction (grub_disk_t disk,
@@ -79,11 +77,9 @@ index 75c6e1f..f0e3a90 100644
  }
  
  const char *
-diff --git a/grub-core/disk/diskfilter.c b/grub-core/disk/diskfilter.c
-index 28b70c6..e8a3bcb 100644
 --- a/grub-core/disk/diskfilter.c
 +++ b/grub-core/disk/diskfilter.c
-@@ -354,7 +354,8 @@ grub_diskfilter_memberlist (grub_disk_t disk)
+@@ -354,7 +354,8 @@ grub_diskfilter_memberlist (grub_disk_t
  
  void
  grub_diskfilter_get_partmap (grub_disk_t disk,
@@ -93,7 +89,7 @@ index 28b70c6..e8a3bcb 100644
  {
    struct grub_diskfilter_lv *lv = disk->data;
    struct grub_diskfilter_pv *pv;
-@@ -376,7 +377,7 @@ grub_diskfilter_get_partmap (grub_disk_t disk,
+@@ -376,7 +377,7 @@ grub_diskfilter_get_partmap (grub_disk_t
  	    continue;
  	  }
  	for (s = 0; pv->partmaps[s]; s++)
@@ -102,11 +98,9 @@ index 28b70c6..e8a3bcb 100644
        }
  }
  
-diff --git a/include/grub/cryptodisk.h b/include/grub/cryptodisk.h
-index 66f3e1e..f2ad2a7 100644
 --- a/include/grub/cryptodisk.h
 +++ b/include/grub/cryptodisk.h
-@@ -145,7 +145,8 @@ grub_cryptodisk_cheat_insert (grub_cryptodisk_t newdev, const char *name,
+@@ -145,7 +145,8 @@ grub_cryptodisk_cheat_insert (grub_crypt
  			      grub_disk_t source, const char *cheat);
  void
  grub_util_cryptodisk_get_abstraction (grub_disk_t disk,
@@ -116,11 +110,9 @@ index 66f3e1e..f2ad2a7 100644
  
  char *
  grub_util_get_geli_uuid (const char *dev);
-diff --git a/include/grub/diskfilter.h b/include/grub/diskfilter.h
-index 042fe04..1aedcd3 100644
 --- a/include/grub/diskfilter.h
 +++ b/include/grub/diskfilter.h
-@@ -202,7 +202,8 @@ grub_diskfilter_get_pv_from_disk (grub_disk_t disk,
+@@ -202,7 +202,8 @@ grub_diskfilter_get_pv_from_disk (grub_d
  				  struct grub_diskfilter_vg **vg);
  void
  grub_diskfilter_get_partmap (grub_disk_t disk,
@@ -130,8 +122,6 @@ index 042fe04..1aedcd3 100644
  #endif
  
  #endif /* ! GRUB_RAID_H */
-diff --git a/util/grub-install.c b/util/grub-install.c
-index b4fe429..70f514c 100644
 --- a/util/grub-install.c
 +++ b/util/grub-install.c
 @@ -401,7 +401,7 @@ probe_raid_level (grub_disk_t disk)
@@ -179,8 +169,6 @@ index b4fe429..70f514c 100644
        have_abstractions = 1;
        have_cryptodisk = 1;
      }
-diff --git a/util/grub-probe.c b/util/grub-probe.c
-index 1f3b59f..e4b5729 100644
 --- a/util/grub-probe.c
 +++ b/util/grub-probe.c
 @@ -130,13 +130,14 @@ get_targets_string (void)
@@ -302,7 +290,7 @@ index 1f3b59f..e4b5729 100644
  }
  
  static void
-@@ -630,16 +631,14 @@ probe (const char *path, char **device_names, char delim)
+@@ -630,16 +631,14 @@ probe (const char *path, char **device_n
  
        if (print == PRINT_ABSTRACTION)
  	{
@@ -321,7 +309,7 @@ index 1f3b59f..e4b5729 100644
  	  grub_device_close (dev);
  	  continue;
  	}
-@@ -647,8 +646,7 @@ probe (const char *path, char **device_names, char delim)
+@@ -647,8 +646,7 @@ probe (const char *path, char **device_n
        if (print == PRINT_PARTMAP)
  	{
  	  /* Check if dev->disk itself is contained in a partmap.  */

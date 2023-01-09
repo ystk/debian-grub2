@@ -15,8 +15,6 @@ Patch-Name: install_arm64_naming.patch
  util/grub-install.c | 4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
 
-diff --git a/util/grub-install.c b/util/grub-install.c
-index 98da118..b4fe429 100644
 --- a/util/grub-install.c
 +++ b/util/grub-install.c
 @@ -1110,8 +1110,8 @@ main (int argc, char *argv[])

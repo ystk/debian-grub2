@@ -19,11 +19,9 @@ Patch-Name: freebsd_debugflags_eperm.patch
  grub-core/osdep/freebsd/hostdisk.c | 12 ++++++++++--
  1 file changed, 10 insertions(+), 2 deletions(-)
 
-diff --git a/grub-core/osdep/freebsd/hostdisk.c b/grub-core/osdep/freebsd/hostdisk.c
-index bd5fddb..a5b00f4 100644
 --- a/grub-core/osdep/freebsd/hostdisk.c
 +++ b/grub-core/osdep/freebsd/hostdisk.c
-@@ -102,8 +102,16 @@ grub_util_fd_open (const char *os_dev, int flags)
+@@ -102,8 +102,16 @@ grub_util_fd_open (const char *os_dev, i
    if (! (sysctl_oldflags & 0x10)
        && sysctlbyname ("kern.geom.debugflags", NULL , 0, &sysctl_flags, sysctl_size))
      {

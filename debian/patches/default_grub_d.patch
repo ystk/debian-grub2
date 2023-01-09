@@ -13,8 +13,6 @@ Patch-Name: default_grub_d.patch
  util/grub-mkconfig.in         |   5 ++
  2 files changed, 98 insertions(+), 21 deletions(-)
 
-diff --git a/grub-core/osdep/unix/config.c b/grub-core/osdep/unix/config.c
-index f4b0bb4..95eabc8 100644
 --- a/grub-core/osdep/unix/config.c
 +++ b/grub-core/osdep/unix/config.c
 @@ -24,6 +24,8 @@
@@ -55,7 +53,7 @@ index f4b0bb4..95eabc8 100644
    FILE *f = NULL;
    int fd;
    const char *v;
-@@ -83,29 +99,75 @@ grub_util_load_config (struct grub_util_config *cfg)
+@@ -83,29 +99,75 @@ grub_util_load_config (struct grub_util_
      cfg->grub_distributor = xstrdup (v);
  
    cfgfile = grub_util_get_config_filename ();
@@ -143,7 +141,7 @@ index f4b0bb4..95eabc8 100644
  	  "\"$GRUB_ENABLE_CRYPTODISK\", \"$GRUB_DISTRIBUTOR\"");
  
    argv[2] = script;
-@@ -125,15 +187,25 @@ grub_util_load_config (struct grub_util_config *cfg)
+@@ -125,15 +187,25 @@ grub_util_load_config (struct grub_util_
        waitpid (pid, NULL, 0);
      }
    if (f)
@@ -177,8 +175,6 @@ index f4b0bb4..95eabc8 100644
 +  free (sorted_cfgpaths);
 +  free (cfgdir);
  }
-diff --git a/util/grub-mkconfig.in b/util/grub-mkconfig.in
-index 81a9afd..62780bf 100644
 --- a/util/grub-mkconfig.in
 +++ b/util/grub-mkconfig.in
 @@ -154,6 +154,11 @@ fi

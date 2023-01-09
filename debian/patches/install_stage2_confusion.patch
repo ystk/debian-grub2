@@ -12,8 +12,6 @@ Patch-Name: install_stage2_confusion.patch
  util/grub-install.c | 14 ++++++++++++++
  1 file changed, 14 insertions(+)
 
-diff --git a/util/grub-install.c b/util/grub-install.c
-index 8cfe0ea..3275209 100644
 --- a/util/grub-install.c
 +++ b/util/grub-install.c
 @@ -42,6 +42,7 @@

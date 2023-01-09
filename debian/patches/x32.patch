@@ -23,8 +23,6 @@ Patch-Name: x32.patch
  include/grub/x86_64/types.h | 6 +++++-
  3 files changed, 9 insertions(+), 5 deletions(-)
 
-diff --git a/configure.ac b/configure.ac
-index 735313d..dd4ba1f 100644
 --- a/configure.ac
 +++ b/configure.ac
 @@ -851,7 +851,7 @@ LDFLAGS="$TARGET_LDFLAGS"
@@ -45,11 +43,9 @@ index 735313d..dd4ba1f 100644
      AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[]], [[]])],
  		      [grub_cv_cc_no_red_zone=yes],
  		      [grub_cv_cc_no_red_zone=no])
-diff --git a/grub-core/kern/x86_64/dl.c b/grub-core/kern/x86_64/dl.c
-index 6cb88bf..4406906 100644
 --- a/grub-core/kern/x86_64/dl.c
 +++ b/grub-core/kern/x86_64/dl.c
-@@ -73,7 +73,7 @@ grub_arch_dl_relocate_symbols (grub_dl_t mod, void *ehdr,
+@@ -73,7 +73,7 @@ grub_arch_dl_relocate_symbols (grub_dl_t
  	  {
  	    grub_int64_t value;
  	    value = ((grub_int32_t) *addr32) + rel->r_addend + sym->st_value -
@@ -58,7 +54,7 @@ index 6cb88bf..4406906 100644
  	    if (value != (grub_int32_t) value)
  	      return grub_error (GRUB_ERR_BAD_MODULE, "relocation out of range");
  	    *addr32 = value;
-@@ -83,7 +83,7 @@ grub_arch_dl_relocate_symbols (grub_dl_t mod, void *ehdr,
+@@ -83,7 +83,7 @@ grub_arch_dl_relocate_symbols (grub_dl_t
  	case R_X86_64_PC64:
  	  {
  	    *addr64 += rel->r_addend + sym->st_value -
@@ -67,8 +63,6 @@ index 6cb88bf..4406906 100644
  	  }
  	  break;
  
-diff --git a/include/grub/x86_64/types.h b/include/grub/x86_64/types.h
-index fec9109..0bbdc6d 100644
 --- a/include/grub/x86_64/types.h
 +++ b/include/grub/x86_64/types.h
 @@ -20,10 +20,14 @@

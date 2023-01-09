@@ -16,8 +16,6 @@ Patch-Name: sleep_shift.patch
  grub-core/normal/menu.c    | 19 +++++++++++++++++++
  2 files changed, 45 insertions(+), 1 deletion(-)
 
-diff --git a/grub-core/commands/sleep.c b/grub-core/commands/sleep.c
-index e77e790..3906b14 100644
 --- a/grub-core/commands/sleep.c
 +++ b/grub-core/commands/sleep.c
 @@ -46,6 +46,31 @@ do_print (int n)
@@ -52,7 +50,7 @@ index e77e790..3906b14 100644
  /* Based on grub_millisleep() from kern/generic/millisleep.c.  */
  static int
  grub_interruptible_millisleep (grub_uint32_t ms)
-@@ -55,7 +80,7 @@ grub_interruptible_millisleep (grub_uint32_t ms)
+@@ -55,7 +80,7 @@ grub_interruptible_millisleep (grub_uint
    start = grub_get_time_ms ();
  
    while (grub_get_time_ms () - start < ms)
@@ -61,11 +59,9 @@ index e77e790..3906b14 100644
        return 1;
  
    return 0;
-diff --git a/grub-core/normal/menu.c b/grub-core/normal/menu.c
-index b47991a..2723547 100644
 --- a/grub-core/normal/menu.c
 +++ b/grub-core/normal/menu.c
-@@ -615,8 +615,27 @@ run_menu (grub_menu_t menu, int nested, int *auto_boot)
+@@ -615,8 +615,27 @@ run_menu (grub_menu_t menu, int nested,
        saved_time = grub_get_time_ms ();
        while (1)
  	{

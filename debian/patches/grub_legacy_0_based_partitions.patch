@@ -12,11 +12,9 @@ Patch-Name: grub_legacy_0_based_partitions.patch
  util/getroot.c | 14 ++++++++++++++
  1 file changed, 14 insertions(+)
 
-diff --git a/util/getroot.c b/util/getroot.c
-index 3958105..704855c 100644
 --- a/util/getroot.c
 +++ b/util/getroot.c
-@@ -244,6 +244,20 @@ find_partition (grub_disk_t dsk __attribute__ ((unused)),
+@@ -244,6 +244,20 @@ find_partition (grub_disk_t dsk __attrib
  
    if (ctx->start == part_start)
      {

@@ -19,11 +19,9 @@ Patch-Name: net-receive-packets-yield.patch
  grub-core/net/net.c | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/grub-core/net/net.c b/grub-core/net/net.c
-index 0e57e93..56355f3 100644
 --- a/grub-core/net/net.c
 +++ b/grub-core/net/net.c
-@@ -1453,7 +1453,7 @@ receive_packets (struct grub_net_card *card, int *stop_condition)
+@@ -1453,7 +1453,7 @@ receive_packets (struct grub_net_card *c
  	}
        card->opened = 1;
      }

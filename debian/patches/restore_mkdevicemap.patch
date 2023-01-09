@@ -23,8 +23,6 @@ Patch-Name: restore_mkdevicemap.patch
  create mode 100644 util/devicemap.c
  create mode 100644 util/grub-mkdevicemap.c
 
-diff --git a/Makefile.util.def b/Makefile.util.def
-index 985e76c..f659fb4 100644
 --- a/Makefile.util.def
 +++ b/Makefile.util.def
 @@ -313,6 +313,23 @@ program = {
@@ -51,9 +49,6 @@ index 985e76c..f659fb4 100644
    name = grub-probe;
    installdir = sbin;
    mansection = 8;
-diff --git a/docs/man/grub-mkdevicemap.h2m b/docs/man/grub-mkdevicemap.h2m
-new file mode 100644
-index 0000000..96cd6ee
 --- /dev/null
 +++ b/docs/man/grub-mkdevicemap.h2m
 @@ -0,0 +1,4 @@
@@ -61,9 +56,6 @@ index 0000000..96cd6ee
 +grub-mkdevicemap \- make a device map file automatically
 +[SEE ALSO]
 +.BR grub-probe (8)
-diff --git a/include/grub/util/deviceiter.h b/include/grub/util/deviceiter.h
-new file mode 100644
-index 0000000..8537497
 --- /dev/null
 +++ b/include/grub/util/deviceiter.h
 @@ -0,0 +1,14 @@
@@ -81,9 +73,6 @@ index 0000000..8537497
 +				     int *num_fd, int *num_hd);
 +
 +#endif /* ! GRUB_DEVICEITER_MACHINE_UTIL_HEADER */
-diff --git a/util/deviceiter.c b/util/deviceiter.c
-new file mode 100644
-index 0000000..75047ff
 --- /dev/null
 +++ b/util/deviceiter.c
 @@ -0,0 +1,954 @@
@@ -1041,9 +1030,6 @@ index 0000000..75047ff
 +out:
 +  clear_seen_devices ();
 +}
-diff --git a/util/devicemap.c b/util/devicemap.c
-new file mode 100644
-index 0000000..c618644
 --- /dev/null
 +++ b/util/devicemap.c
 @@ -0,0 +1,13 @@
@@ -1060,9 +1046,6 @@ index 0000000..c618644
 +    else
 +      fprintf (fp, "(hd%d)\t%s\n", (*num_hd)++, name);
 +}
-diff --git a/util/grub-mkdevicemap.c b/util/grub-mkdevicemap.c
-new file mode 100644
-index 0000000..c4bbdbf
 --- /dev/null
 +++ b/util/grub-mkdevicemap.c
 @@ -0,0 +1,181 @@

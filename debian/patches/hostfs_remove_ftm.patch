@@ -17,8 +17,6 @@ Patch-Name: hostfs_remove_ftm.patch
  grub-core/kern/emu/hostfs.c | 1 -
  1 file changed, 1 deletion(-)
 
-diff --git a/grub-core/kern/emu/hostfs.c b/grub-core/kern/emu/hostfs.c
-index 7e725f6..7b28c00 100644
 --- a/grub-core/kern/emu/hostfs.c
 +++ b/grub-core/kern/emu/hostfs.c
 @@ -19,7 +19,6 @@

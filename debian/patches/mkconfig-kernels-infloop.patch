@@ -22,8 +22,6 @@ Patch-Name: mkconfig-kernels-infloop.patch
  util/grub.d/20_linux_xen.in | 4 ++--
  4 files changed, 5 insertions(+), 5 deletions(-)
 
-diff --git a/util/grub.d/10_hurd.in b/util/grub.d/10_hurd.in
-index 6fafe1a..4adf981 100644
 --- a/util/grub.d/10_hurd.in
 +++ b/util/grub.d/10_hurd.in
 @@ -168,7 +168,7 @@ while [ "x$kernels" != "x" ] ; do
@@ -35,8 +33,6 @@ index 6fafe1a..4adf981 100644
  done
  
  # If at least one kernel was found, then we need to
-diff --git a/util/grub.d/10_kfreebsd.in b/util/grub.d/10_kfreebsd.in
-index 7b04a87..0af384c 100644
 --- a/util/grub.d/10_kfreebsd.in
 +++ b/util/grub.d/10_kfreebsd.in
 @@ -228,7 +228,7 @@ while [ "x$list" != "x" ] ; do
@@ -48,8 +44,6 @@ index 7b04a87..0af384c 100644
  done
  
  # If at least one kernel was found, then we need to
-diff --git a/util/grub.d/10_linux.in b/util/grub.d/10_linux.in
-index 024a89e..79fa03a 100644
 --- a/util/grub.d/10_linux.in
 +++ b/util/grub.d/10_linux.in
 @@ -344,7 +344,7 @@ while [ "x$list" != "x" ] ; do
@@ -61,8 +55,6 @@ index 024a89e..79fa03a 100644
  done
  
  # If at least one kernel was found, then we need to
-diff --git a/util/grub.d/20_linux_xen.in b/util/grub.d/20_linux_xen.in
-index 10a3db5..a5e5e50 100644
 --- a/util/grub.d/20_linux_xen.in
 +++ b/util/grub.d/20_linux_xen.in
 @@ -260,12 +260,12 @@ while [ "x${xen_list}" != "x" ] ; do

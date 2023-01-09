@@ -28,8 +28,6 @@ Patch-Name: platform-none.patch
  include/grub/time.h |  2 +-
  3 files changed, 41 insertions(+), 21 deletions(-)
 
-diff --git a/Makefile.am b/Makefile.am
-index 320e86f..a32f893 100644
 --- a/Makefile.am
 +++ b/Makefile.am
 @@ -1,7 +1,11 @@
@@ -63,7 +61,7 @@ index 320e86f..a32f893 100644
  .PHONY: bootcheck-linux-i386 bootcheck-linux-x86_64 \
         bootcheck-kfreebsd-i386 bootcheck-kfreebsd-x86_64 \
         bootcheck-knetbsd-i386 bootcheck-knetbsd-x86_64 \
-@@ -402,6 +406,10 @@ default_payload.elf: grub-mkstandalone grub-mkimage
+@@ -402,6 +406,10 @@ default_payload.elf: grub-mkstandalone g
  	pkgdatadir=. ./grub-mkstandalone --grub-mkimage=./grub-mkimage -O i386-coreboot -o $@ --modules='ahci pata ehci uhci ohci usb_keyboard usbms part_msdos xfs ext2 fat at_keyboard part_gpt usbserial_usbdebug cbfs' --install-modules='ls linux search configfile normal cbtime cbls memrw iorw minicmd lsmmap lspci halt reboot hexdump pcidump regexp setpci lsacpi chain test serial' --fonts= --themes= --locales= -d grub-core/ /boot/grub/grub.cfg=$(srcdir)/coreboot.cfg
  endif
  
@@ -74,8 +72,6 @@ index 320e86f..a32f893 100644
  windowsdir=$(top_builddir)/$(PACKAGE)-$(VERSION)-for-windows
  windowsdir: $(PROGRAMS) $(starfield_DATA) $(platform_DATA)
  	test -d $(windowsdir) && rm -rf $(windowsdir) || true
-diff --git a/configure.ac b/configure.ac
-index 5ce3caf..24b9cbf 100644
 --- a/configure.ac
 +++ b/configure.ac
 @@ -126,7 +126,10 @@ if test "x$with_platform" = x; then
@@ -114,7 +110,7 @@ index 5ce3caf..24b9cbf 100644
  AM_CONDITIONAL([COND_emu], [test x$platform = xemu])
  AM_CONDITIONAL([COND_clang], [test x$grub_cv_cc_target_clang = xyes])
  AM_CONDITIONAL([COND_i386_pc], [test x$target_cpu = xi386 -a x$platform = xpc])
-@@ -1778,24 +1784,30 @@ AC_DEFINE_UNQUOTED(GRUB_SYSCONFDIR, "$grub_sysconfdir", [Configuration dir])
+@@ -1778,24 +1784,30 @@ AC_DEFINE_UNQUOTED(GRUB_SYSCONFDIR, "$gr
  
  
  # Output files.
@@ -127,11 +123,7 @@ index 5ce3caf..24b9cbf 100644
 -  AC_CONFIG_LINKS([include/grub/cpu:include/grub/$cpudir])
 -  if test "$platform" != emu ; then
 -    AC_CONFIG_LINKS([include/grub/machine:include/grub/$cpudir/$platform])
-+if test "$platform" != none; then
-+  cpudir="${target_cpu}"
-+  if test x${cpudir} = xmipsel; then
-+    cpudir=mips;
-   fi
+-  fi
 -else
 -  mkdir -p include/grub 2>/dev/null
 -  rm -rf include/grub/cpu
@@ -139,6 +131,11 @@ index 5ce3caf..24b9cbf 100644
 -  if test "$platform" != emu ; then
 -    rm -rf include/grub/machine
 -    cp -rp $srcdir/include/grub/$cpudir/$platform include/grub/machine 2>/dev/null
++if test "$platform" != none; then
++  cpudir="${target_cpu}"
++  if test x${cpudir} = xmipsel; then
++    cpudir=mips;
++  fi
 +  grub_CHECK_LINK_DIR
 +  if test x"$link_dir" = xyes ; then
 +    AC_CONFIG_LINKS([include/grub/cpu:include/grub/$cpudir])
@@ -161,8 +158,6 @@ index 5ce3caf..24b9cbf 100644
  fi
  
  AC_CONFIG_FILES([Makefile])
-diff --git a/include/grub/time.h b/include/grub/time.h
-index 64ac99a..c919c1f 100644
 --- a/include/grub/time.h
 +++ b/include/grub/time.h
 @@ -21,7 +21,7 @@

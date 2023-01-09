@@ -69,3 +69,14 @@ mixed_size_efi.patch
 hostfs_remove_ftm.patch
 efi_sanitise_path.patch
 CVE-2015-8370.patch
+cve_2022_2601/0001-video-readers-Add-artificial-limit-to-image-dimensio.patch
+cve_2022_2601/0002-font-Reject-glyphs-exceeds-font-max_glyph_width-or-f.patch
+cve_2022_2601/0005-font-Remove-grub_font_dup_glyph.patch
+cve_2022_2601/0007-font-Fix-integer-overflow-in-BMP-index.patch
+cve_2022_2601/0008-font-Fix-integer-underflow-in-binary-search-of-char-.patch
+cve_2022_2601/0010-fbutil-Fix-integer-overflow.patch
+cve_2022_2601/0011-font-Fix-an-integer-underflow-in-blit_comb.patch
+cve_2022_2601/0013-font-Assign-null_font-to-glyphs-in-ascii_font_glyph.patch
+cve_2022_2601/0014-normal-charset-Fix-an-integer-overflow-in-grub_unico.patch
+kern-file-Fix-error-handling-in-grub_file_open.patch
+font-Try-opening-fonts-from-the-bundled-memdisk.patch

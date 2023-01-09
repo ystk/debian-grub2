@@ -12,8 +12,6 @@ Patch-Name: gettext-print-typo.patch
  util/grub-mkconfig.in | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/util/grub-mkconfig.in b/util/grub-mkconfig.in
-index ccce9e5..4641563 100644
 --- a/util/grub-mkconfig.in
 +++ b/util/grub-mkconfig.in
 @@ -131,7 +131,7 @@ set $grub_probe dummy

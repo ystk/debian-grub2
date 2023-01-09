@@ -11,8 +11,6 @@ Patch-Name: mkrescue_arm64_naming.patch
  util/grub-mkrescue.c | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/util/grub-mkrescue.c b/util/grub-mkrescue.c
-index cf698ff..54b602d 100644
 --- a/util/grub-mkrescue.c
 +++ b/util/grub-mkrescue.c
 @@ -669,7 +669,7 @@ main (int argc, char *argv[])

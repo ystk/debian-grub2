@@ -13,11 +13,9 @@ Patch-Name: linuxefi_non_sb_fallback.patch
  grub-core/loader/i386/linux.c     | 43 +++++++++++++++++++++++++++++++++++++++
  2 files changed, 44 insertions(+), 1 deletion(-)
 
-diff --git a/grub-core/loader/i386/efi/linux.c b/grub-core/loader/i386/efi/linux.c
-index f764f49..88e2d34 100644
 --- a/grub-core/loader/i386/efi/linux.c
 +++ b/grub-core/loader/i386/efi/linux.c
-@@ -234,7 +234,7 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
+@@ -234,7 +234,7 @@ grub_cmd_linux (grub_command_t cmd __att
  
    if (! grub_linuxefi_secure_validate (kernel, filelen))
      {
@@ -26,8 +24,6 @@ index f764f49..88e2d34 100644
        grub_free (kernel);
        goto fail;
      }
-diff --git a/grub-core/loader/i386/linux.c b/grub-core/loader/i386/linux.c
-index 31fb91e..2380642 100644
 --- a/grub-core/loader/i386/linux.c
 +++ b/grub-core/loader/i386/linux.c
 @@ -76,6 +76,8 @@ static grub_size_t maximal_cmdline_size;
@@ -39,7 +35,7 @@ index 31fb91e..2380642 100644
  static grub_efi_uintn_t efi_mmap_size;
  #else
  static const grub_size_t efi_mmap_size = 0;
-@@ -690,6 +692,41 @@ grub_cmd_linux (grub_command_t cmd __attribute__ ((unused)),
+@@ -690,6 +692,41 @@ grub_cmd_linux (grub_command_t cmd __att
  
    grub_dl_ref (my_mod);
  
@@ -81,7 +77,7 @@ index 31fb91e..2380642 100644
    if (argc == 0)
      {
        grub_error (GRUB_ERR_BAD_ARGUMENT, N_("filename expected"));
-@@ -1052,6 +1089,12 @@ grub_cmd_initrd (grub_command_t cmd __attribute__ ((unused)),
+@@ -1052,6 +1089,12 @@ grub_cmd_initrd (grub_command_t cmd __at
    grub_err_t err;
    struct grub_linux_initrd_context initrd_ctx;
  

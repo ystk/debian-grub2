@@ -13,11 +13,9 @@ Patch-Name: linuxefi_require_shim.patch
  grub-core/loader/i386/efi/linux.c | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/grub-core/loader/i386/efi/linux.c b/grub-core/loader/i386/efi/linux.c
-index 2bf38fa..f764f49 100644
 --- a/grub-core/loader/i386/efi/linux.c
 +++ b/grub-core/loader/i386/efi/linux.c
-@@ -63,7 +63,7 @@ grub_linuxefi_secure_validate (void *data, grub_uint32_t size)
+@@ -63,7 +63,7 @@ grub_linuxefi_secure_validate (void *dat
    if (!shim_lock)
      {
        grub_dprintf ("linuxefi", "shim not available\n");

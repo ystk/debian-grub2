@@ -16,8 +16,6 @@ Patch-Name: install_signed.patch
  util/grub-install.c | 169 +++++++++++++++++++++++++++++++++++++---------------
  1 file changed, 122 insertions(+), 47 deletions(-)
 
-diff --git a/util/grub-install.c b/util/grub-install.c
-index 3275209..0d77a2a 100644
 --- a/util/grub-install.c
 +++ b/util/grub-install.c
 @@ -80,6 +80,7 @@ static char *label_color;
@@ -39,7 +37,7 @@ index 3275209..0d77a2a 100644
    };
  
  static int fs_probe = 1;
-@@ -235,6 +238,14 @@ argp_parser (int key, char *arg, struct argp_state *state)
+@@ -235,6 +238,14 @@ argp_parser (int key, char *arg, struct
        bootloader_id = xstrdup (arg);
        return 0;
  

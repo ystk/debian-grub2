@@ -1,3 +1,19 @@
+grub2 (2.02~beta2-22+deb8u2) jessie-security; urgency=high
+
+  * Non-maintainer upload by the ELTS team.
+  * Fix CVE-2022-2601 and CVE-2022-3775:
+    Several issues were found in GRUB2's font handling code, which could result
+    in crashes and potentially execution of arbitrary code. These could lead to
+    by-pass of UEFI Secure Boot on affected systems.
+    Further, issues were found in image loading that could potentially lead to
+    memory overflows.
+    Please note that some integer overflow mitigations could not be applied
+    because of builtin GCC functions which are only available in newer Debian
+    versions. Only system administrators should be able to change grub2 fonts.
+    If you use the default fonts, your system is not affected.
+
+ -- Markus Koschany <apo@debian.org>  Tue, 27 Dec 2022 10:11:42 +0100
+
 grub2 (2.02~beta2-22+deb8u1) jessie-security; urgency=high
 
   * Non-maintainer upload.

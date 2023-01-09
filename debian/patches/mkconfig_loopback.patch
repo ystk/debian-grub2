@@ -20,8 +20,6 @@ Patch-Name: mkconfig_loopback.patch
  util/grub.d/20_linux_xen.in |  5 +++++
  3 files changed, 34 insertions(+)
 
-diff --git a/util/grub-mkconfig_lib.in b/util/grub-mkconfig_lib.in
-index 4f6c4fe..6da2c2d 100644
 --- a/util/grub-mkconfig_lib.in
 +++ b/util/grub-mkconfig_lib.in
 @@ -133,6 +133,22 @@ prepare_grub_to_access_device ()
@@ -62,8 +60,6 @@ index 4f6c4fe..6da2c2d 100644
  }
  
  grub_get_device_id ()
-diff --git a/util/grub.d/10_linux.in b/util/grub.d/10_linux.in
-index a9f9b31..c83f1ed 100644
 --- a/util/grub.d/10_linux.in
 +++ b/util/grub.d/10_linux.in
 @@ -40,6 +40,11 @@ fi
@@ -78,8 +74,6 @@ index a9f9b31..c83f1ed 100644
    ;;
  esac
  
-diff --git a/util/grub.d/20_linux_xen.in b/util/grub.d/20_linux_xen.in
-index a608435..fb4f615 100644
 --- a/util/grub.d/20_linux_xen.in
 +++ b/util/grub.d/20_linux_xen.in
 @@ -40,6 +40,11 @@ fi

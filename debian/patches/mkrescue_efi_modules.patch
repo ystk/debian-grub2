@@ -13,8 +13,6 @@ Patch-Name: mkrescue_efi_modules.patch
  util/grub-mkrescue.c | 6 ++++++
  1 file changed, 6 insertions(+)
 
-diff --git a/util/grub-mkrescue.c b/util/grub-mkrescue.c
-index 317879d..cf698ff 100644
 --- a/util/grub-mkrescue.c
 +++ b/util/grub-mkrescue.c
 @@ -653,12 +653,18 @@ main (int argc, char *argv[])

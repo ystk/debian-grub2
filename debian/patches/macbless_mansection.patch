@@ -8,8 +8,6 @@ Patch-Name: macbless_mansection.patch
  Makefile.util.def | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/Makefile.util.def b/Makefile.util.def
-index e1f6089..691372d 100644
 --- a/Makefile.util.def
 +++ b/Makefile.util.def
 @@ -422,7 +422,7 @@ program = {
